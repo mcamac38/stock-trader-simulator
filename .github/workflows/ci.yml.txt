@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  build-test:
+    runs-on: unbuntu-lastest
+
+    strategy:
+      matrix:
+	include:
+	  # ---Backend (Python) ---
+	  - name: backend
+	    workdir: backend
+	    runtime: python
+	    python-version: '3.11'
+	  #

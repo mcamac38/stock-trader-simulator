@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  # ---Backend (Python) + Postgres ---
+  backend:
+    name: Backend (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports: [ "5432:5432" ]
+        options: >-
+          --health-cmd="pg_isready -U testuser -d testdb"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          
+      - name: Install deps
+        run: |
+          python - <<'PY'
+          import time,  socket
+          s=socket.socket();
+          for _ in range(30):
+              try:
+                  s.connect(("127.0.0.1", 5432)); s.close(); break
+              except Exception:: time.sleep(1)
+          else:
+              raise SystemExit(Postgres not reachable")
+          PY
+          
+      - name: Set test env
+        run: |
+          echo "DATABASE_URL=postgresql://testuser.testpass@127.0.0.1:5432/testdb" >> $GITHUB_ENV
+          
+      # OPTIONAL: run minimal migration/bootstrap script if you have one
+      - name: DB bootstrap (optional)
+        run: |
+          if [ -f scripts/bootstrap.sql ]; then psql "$DATABASE_URL" -f scripts/bootstrap.sql; fi
+          if [ -f scripts/migrate.py ]; then python scripts/migrate.py; fi
+
+      - name: Lint (flake8)
+        run: flake8 || true
+
+      - name: Format check (black)
+        run: black --check . || true
+  
+      - name: Security scan (bandit)
+        run: bandit -r . || true
+
+      - name: Run tests
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          if [ -d tests ]; then pytest -q; else echo "No tests configured"; fi
+
+      - name: Package artifact
+        run: |
+          mkdir -p ../artifacts
+          # Replace with your real packaging command when ready
+          echo "placeholder artifact" > ../artifacts/backend.txt
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-artifact
+          path: artifacts/ 
+  # ---------- FRONTEND: Static HTML/CSS/JS checks ----------
+  frontend:
+    name: Frontend (Static checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure frontend folder exists
+        run: |
+          if [ -d frontend ]; then echo "Found /frontend"; else echo "No frontend folder" && exit 0; fi
+
+      # Broken link check (external links allowed; adjust as needed)
+      - name: Link check (Lychee)
+        uses: lycheeverse/lychee-action@v1
+        with:
+          # scan your static site files
+          args: --verbose --no-progress "frontend/**/*.html"
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}          
+          
+    

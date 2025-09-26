@@ -1,0 +1,21 @@
+# python
+_pycache_/
+*.pyc
+venv/
+
+#Node
+node_modules/
+dist/
+build/
+
+# Environment / Secrets
+.env
+*.key
+*.pem
+
+#Logs
+*.log
+
+# System Files
+.DS_Store
+Thumbs.db_pycache_/ 
