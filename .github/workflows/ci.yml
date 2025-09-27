@@ -50,7 +50,7 @@ jobs:
           
       - name: Set test env
         run: |
-          echo "DATABASE_URL=postgresql://testuser.testpass@127.0.0.1:5432/testdb" >> $GITHUB_ENV
+          echo "DATABASE_URL=postgresql://testuser:testpass@127.0.0.1:5432/testdb" >> $GITHUB_ENV
           
       # OPTIONAL: run minimal migration/bootstrap script if you have one
       - name: DB bootstrap (optional)
