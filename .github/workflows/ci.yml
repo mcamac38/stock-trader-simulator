@@ -94,7 +94,7 @@ jobs:
         run: |
           if [ -d frontend ]; then echo "Found /frontend"; else echo "No frontend folder" && exit 0; fi
 
-      # Broken link check (external links allowed; adjust as needed)
+      # Broken link check (external links allowed; adjust as needed)1
       - name: Link check (Lychee)
         uses: lycheeverse/lychee-action@v1
         with:
