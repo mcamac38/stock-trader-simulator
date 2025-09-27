@@ -45,7 +45,7 @@ jobs:
                   s.connect(("127.0.0.1", 5432)); s.close(); break
               except Exception:: time.sleep(1)
           else:
-              raise SystemExit(Postgres not reachable")
+              raise SystemExit("Postgres not reachable")
           PY
           
       - name: Set test env
