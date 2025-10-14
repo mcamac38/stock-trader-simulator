@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin • Market Schedule | Stock Trading Simulator</title>
+    <meta
+      name="description"
+      content="Manage market days and holidays (admin)."
+    />
+    <meta name="robots" content="noindex,nofollow" />
+    <meta name="theme-color" content="#0a2540" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="../images/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="../images/apple-touch-icon.png" />
+    <link rel="canonical" href="/pages/admin-market-schedule.html" />
+    <link rel="stylesheet" href="../css/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="site-header" role="banner">
+        <div class="branding">
+          <h1>Stock Trading Simulator</h1>
+        </div>
+      </header>
+
+      <nav class="site-nav" role="navigation" aria-label="Primary">
+        <div class="nav-container">
+          <label
+            for="nav-toggle"
+            class="nav-toggle-label"
+            aria-label="Toggle navigation"
+          >
+            <span class="bar"></span>
+          </label>
+          <input type="checkbox" id="nav-toggle" class="nav-toggle" />
+          <ul class="menu">
+            <li><a href="../index.html">Home</a></li>
+            <li><a href="./portfolio.html">Portfolio</a></li>
+            <li><a href="./buy.html">Buy Stocks</a></li>
+            <li><a href="./sell.html">Sell Stocks</a></li>
+            <li><a href="./transactions.html">Transactions</a></li>
+            <li><a href="./deposit.html">Deposit</a></li>
+            <li><a href="./withdraw.html">Withdraw</a></li>
+            <li><a href="./login.html">Logout</a></li>
+            <li class="admin-only">
+              <a href="./admin-create-stock.html">Create New Stock</a>
+            </li>
+            <li class="admin-only">
+              <a href="./admin-market-hours.html">Change Market Hours</a>
+            </li>
+            <li class="admin-only">
+              <a href="./admin-market-schedule.html" aria-current="page"
+                >Change Market Schedule</a
+              >
+            </li>
+          </ul>
+        </div>
+      </nav>
+
+      <main class="site-main">
+        <div class="container">
+          <section class="card" aria-labelledby="schedule-title">
+            <h2 class="page-title" id="schedule-title">
+              Change Market Schedule
+            </h2>
+
+            <div class="msg success" role="status" aria-live="polite">
+              Schedule updated.
+            </div>
+            <div class="msg error" role="alert" aria-live="polite">
+              Update failed.
+            </div>
+
+            <form class="form" action="#" method="post" novalidate>
+              <div class="form-row">
+                <label for="weekdays">Weekdays</label>
+                <select
+                  id="weekdays"
+                  name="weekdays"
+                  multiple
+                  size="5"
+                  aria-describedby="weekdayHelp"
+                >
+                  <option value="mon">Monday</option>
+                  <option value="tue">Tuesday</option>
+                  <option value="wed">Wednesday</option>
+                  <option value="thu">Thursday</option>
+                  <option value="fri">Friday</option>
+                </select>
+                <small id="weekdayHelp" class="muted"
+                  >Hold Ctrl/Cmd to select multiple days</small
+                >
+              </div>
+              <div class="form-row">
+                <label for="holidays">Holidays</label>
+                <input type="date" id="holidays" name="holidayDate" />
+              </div>
+              <div class="actions">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a class="btn btn-cancel" href="./index.html">Cancel</a>
+              </div>
+            </form>
+          </section>
+        </div>
+      </main>
+
+      <footer class="site-footer" role="contentinfo">
+        <small>© 2025 Stock Trading Simulator | Arizona State University</small>
+      </footer>
+    </div>
+  </body>
+</html>
