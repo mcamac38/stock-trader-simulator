@@ -1,7 +1,7 @@
 const API =
-  (typeof import !== "undefined" && import.meta && import.meta.env && import.meta.env.VITE_API_URL)
-  || (typeof window !== "undefined" && window.API_BASE_URL)
-  || "http://ec2-54-205-226-205.compute-1.amazonaws.com";
+  (typeof window !== "undefined" && window.API_BASE_URL) ||
+  "http://ec2-54-205-226-205.compute-1.amazonaws.com";
+
 
 const BASE_URL = API; // change if needed
 

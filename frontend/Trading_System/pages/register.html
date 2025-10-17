@@ -168,5 +168,70 @@
         <small>© 2025 Stock Trading Simulator | Arizona State University</small>
       </footer>
     </div>
+	<script type="module">
+	import { registerUser } from "../javascript/api.js"
+	
+	//Grab elements
+	const frorm = documents.querySelector("form");
+	const msgSuccess = document.querySelector(".msg.success");
+	const msgError = document.querySelector(".msg.error");
+	
+	//Hide both messages initially
+	msgSuccess.style.display = "none";
+	msgError.style.display = "none";
+	
+	form.addEventListener("submit", async (e) => {
+		e.preventDefault());
+	
+		//Collect values from your current IDs
+		const fullName =document.getElementById("fullName").value.trim();
+		const username = document.getElementId("regUsername").value.trim();
+		const email = document.getElementById("email").value.trim();
+		const confirmEmail = document.getElementById("confirmEmail").value.trim();
+		const password = document.getElementById("regPassword").value;
+		const confirmPassword = document.getElementById("confirmPassword").value();
+	
+		//Client-side checks
+		if (email != confirmEmail) {
+			msgError.textContent = "Emails do not match.";
+			msgError.style.display = "block";
+			msgSuccess.style.display = "none";
+			return;
+		}
+		if (password != confirmEmail) {
+			msgError.textContent = "Passwords do not match.";
+			msgError.style.display = "block";
+			msgSuccess.style.display = "none";
+			return;
+		}
+	
+		//Disables button during request
+		const submitButton = form.querySelector('button[type="submit"]');
+		submitButton.disabled = true;
+	
+		try {
+			//Map to the backend field names (snake_case is expected in the backend)
+			await registerUser({ full_name: fullName, username, email, password });
+		
+			// Show success plus redirect
+			msgSuccess.textContent = "Account created successfully. Redirecting...";
+			msgSuccess.style.display = "block";
+			msgError.style.display = "none";
+			setTimeout(() => { window.location.href = "./login.html";}, 1200);
+		}
+		catch (err) {
+			// Shows server erro (e.g. username or email is already taken")
+			msgError.textContent = err.message || "Registration failed.";
+			msgError.style.display = "block";
+			msgSuccess.style.display = "none";
+		}
+		finally {
+			submitButton.disabled = false;
+		}
+	});
+	//Backend endpoint alignment (so the page can talk to it)
+	//Make sure your backend has:
+	//POST /auth/register accepting JSON body:
+	</script>
   </body>
 </html>

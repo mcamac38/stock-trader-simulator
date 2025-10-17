@@ -182,5 +182,83 @@
         </div>
       </footer>
     </div>
+	<script type="module">
+		import { requireAuth, placeOrder, renderCash } from "../javascript/api.js;
+		
+		//protects the page and shows current cash available
+		requireAuth();
+		renderCash();
+		
+		//Grabs DOM
+		const form = document.querySelector("form");
+		const tickerInput = document.ElementById("buyTicker");
+		const qtyInput = document.getElementById("buyQty");
+		
+		//uses messages boxes other wise falls back to alert
+		const msgSuccess = document.querySelector(".msg.success");
+		const msgError = document.querySelector(".msg.error");
+		if (msgSuccess) msgSuccess.style.display = "none";
+		if (msgError) msgError.style.display = "none";
+		
+		const fmt = (n) => Number(n).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2 });
+		
+		form.addEventListener("submit", async (e) => {
+			e.preventDefault();
+			
+			//Reads and validates
+			const rawTicker = (tickerInput?.value || "").trim().toUpperCase();
+			const rawQty = (qtyInput?.value || "").trim();
+			const qty = Number(rawQty);
+	
+			if (!rawTicker) {
+				showError("Enter a ticker symbol (e.g. ACME).");
+				return;
+			}
+			
+			//Disables submit to prevent double orders
+			const submitButti = form.querySelector('button[type="submit"], input[type="submit"]');
+			if (submitButton) submitButton.disabled = true;
+			
+			try {
+				// POST /trades/order {ticker, side: "buy", quantity}
+				const res = await placeOrder({ ticker: rawTicker, side: "buy", quantity: qty });
+				
+				//clears, shows confirmation, and refreshes cash available
+				if (qtyInput) qtyInput.value = "";
+				showSuccess(`BUY ${res.ticker} @ $${fmt(res.price)} * ${res.quantity} = $${fmt(res.total_value)}`);
+				await renderCash();
+			}
+			
+			catch (err) {
+				showError(err.message || "Buy order failed.");
+			}
+			
+			finally {
+				if (submitButton) submitButton.disabled = false;
+			}
+		});
+
+		function showSuccess(msg) {
+			if (msgSuccess) {
+				msgSuccess.textContent = msg;
+				msgSuccess.style.display = "block";
+			} 
+			else {
+				alert(msg);
+			}
+			if (msgError) msgError.style.display = "none";
+		}
+
+		function showError(msg) {
+			if (msgError) {
+				msgError.textContent = msg;
+				msgError.style.display = "block";
+			} 
+			else {
+				alert(msg);
+			}
+			if (msgSuccess) msgSuccess.style.display = "none";
+		}
+	</script>
   </body>
 </html>

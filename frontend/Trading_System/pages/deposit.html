@@ -149,5 +149,81 @@
         </div>
       </footer>
     </div>
+	<script type="module">
+		import { requireAuth, deposit, renderCash } from "../javascript/api.js";
+		
+		// Requires login for this page
+		requireAuth();
+		
+		//review maybe
+		renderCash();
+		
+		//This grabs the DOM nodes
+		const form = document.querySelector("form");
+		const amountInput = document.getElementId("depositAmount");
+		const sourceSelect = document.getElementId("fundingSource");
+		
+		//These are optional message boxes (they can be used to add detail to the page)
+		const msgSuccess = document.querySelector(".msg.success");
+		const msgError = document.querySelector(".msg.error");
+		if (msgSuccess) msgSuccess.style.display = "none";
+		if (msgError) msgError.style.display = "none";
+		
+		form.addEventListener("submit", async (e) => {
+			e.preventDefault();
+			
+			//This takes care of basic validation
+			const raw = (amountInput?.value || "").trim();
+			const amount = Number(raw);
+			if (!raw || isNan(amount) || amount <= 0) {
+				if (msgError) {
+					msgError.textContent = "Enter a valid amount greater than 0.";
+					msgError.style.display = "block";
+				}
+				else {
+					alert("Enter a valid amount greater than 0.");
+				}
+				return;
+			}
+			
+			//Disables the submit to avoid a double post
+			const submitButton = form.querySelector('button[type="submit"], input[type="submit"]');
+			if (submitButton) submitButton.disabled = true;
+			
+			try {
+			
+				const selectedSource = sourceSelect?.value || "unspecified";
+				
+				//Calls backend: POST /cash/deposit { amount }
+				await deposit(amount)
+				
+				// clears and shows feedback
+				if (amountInput) amountInput.value = "";
+				if (msgSuccess) {
+					msgSuccess.textContent = "Deposit successful.";
+					msgSuccess.style.display = "block";
+				}
+				else {
+					alert("Deposit successful.");
+				}
+				
+				//Refreshes the cash shown in the display
+				await renderCash();
+			}
+			
+			catch (err) {
+				if (msgError) {
+					msgError.textContent = err.message || "Deposit failed.";
+					msgError.style.display = "block";
+				}
+				else {
+					alert(err.message || "Deposit failed.");
+				}
+			}
+			finally {
+				if (submitButton) submitButton.disabled = false;
+			}
+		});
+	</script>
   </body>
 </html>

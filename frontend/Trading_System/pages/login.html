@@ -95,5 +95,57 @@
         <small>© 2025 Stock Trading Simulator | Arizona State University</small>
       </footer>
     </div>
+	<script type="module">
+	import { loginUser } from "../javascript/api.js";
+	
+	const form = document.querySelector("form");
+	
+	//If 
+	const msgSuccess = document.querySelector(".msg.success");
+	const msgError = document.querySelector(".msg.error");
+	if (msgSuccess) msgSuccess.style.display = "none";
+	if (msgError) msgError.style.display = "none";
+	
+	form.addEventListener("submit", async (e) => {
+		e.preventDefault();
+		
+		const username = document.getElementID("username").value.trim();
+		const password = document.getElementID("password").value;
+		
+		//Display button during request
+		const submitButton = form.querySelector('button[type="submit"]');
+		if (submitButton) submitButton.disabled = true
+		
+		//clears old messages
+		if (msgSuccess) msgSuccess.style.display = "none"
+		if (msgError) {msgError.textContent = ""; msgError.style.display = "none"; }
+		
+		try {
+			await loginUser({ username, password })
+			
+			//Shows success plus redirects (you can adjust the destination if you need)
+			if (msgSuccess) {
+				msgSuccess.textContent = "Login successful, Redirecting...";
+				msgSuccess.style.display = "block";
+			}
+			//Supports ?next=/pages/buy.html
+			const params new URLSearchParams(window.location.search);
+			const next = params.get("next") || "./portfolio.html";
+			setTimeout(() => { window.location.href = next; } 600);
+		}
+		catch (err) {
+			if (msgError) {
+				msgError.textContent = err.message || "Invalid username or password.";
+				msgError.style.display = "block";
+			}
+			else {
+				alert(err.message || "Invalid username or password.");
+			}
+		}
+		finally {
+			if (submitButton) submitButton,=.disabled = false;
+		}
+	});
+	</script>
   </body>
 </html>

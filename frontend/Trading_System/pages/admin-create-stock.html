@@ -152,5 +152,88 @@
         </div>
       </footer>
     </div>
+	<script type="module">
+		import { requireAuth, adminCreateStock } from "../javascript/api.js";
+		
+		// Require Login; backend will enforce the admin role (throw 403 is not admin)
+		requireAuth();
+		
+		//Grabs form & inputs (tries a few common IDs; tweak if needed)
+		const form = document.querySelector("form");
+		const el = (ids) => ids.map(id => document.getElementById(id)).find(Boolean);
+		
+		const tickerInput = el(["createTicker","ticker","stockTicker"]);
+		const nameInput = el(["companyName","name","company"]);
+		const priceInput = el(["price","initialPrice","currentPrice"]);
+		const volumeInput = el(["volume","initialVolume"]);
+		const sectorInput = el(["sector","industry"]);
+		const listedInput = el(["isListed","listed","is_listed"]); // checkbox (optional)
+		
+		//message box stuff if we have them
+		const msgSuccess = document.querySelector(".msg.success");
+		const msgError = document.querySelector(".msg.error");
+		if (msgSuccess) msgSuccess.style.display = "none";
+		if (msgError) msgError.style.display = "none";
+		
+		const fmt = (n) => Number(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+		
+		form.addEventListener("submit", async (e) => {
+			e.preventDefault();
+			
+			//Read values
+			const ticker = (tickerInput?.value || "").trim().toUpperCase();
+			const company_name = (nameInput?.value || "").trim();
+			const priceRaw = (priceInput?.value || "").trim();
+			const current_price = Number(priceRaw);
+			const volume = volumeInput?.value ? Number(volumeInput.value) : undefined;
+			const sector = (sectorInput?.value || "").trim() || undefined;
+			const is_listed = listedInput ? !!listedInput.checked : true;
+			
+			
+			//This does validation
+			if (!ticker)
+				return showError("Enter a ticker (e.g., ACME).");
+			if (!company_name)
+				return showError("Enter a company name.");
+			if (!priceRaw || isNan(current_price) || current_price <= 0)
+				return showError("Enter a valid starting price.");
+			
+			//Disable submit to avoid double posts
+			const submitButton = form.querySelector('button[type="submit"], input[type="submit"]');
+			if (submitButton) submitButton.disabled = true;
+			
+			try {
+				//Builds the payload 
+				const payload = { ticker, company_name, current_price };
+				if (typeof volume == "number" && !Number.isNan(volume)) payload.volume = volume;
+				if (sector) payload.sector = sector;
+				if (typeof is_listed == "boolean") payload.is_listed = is_listed;
+				
+				
+				//calls the backend (must be admin otherwise it will throw a 403)
+				const res - await adminCreateStock(payload);
+				
+				//if successful UX
+				showSuccess('Created ${res?.ticker || ticker} (${company_name}) @ $${fmt(current_price)}.');
+				
+				//clears fields for re-entry of another Stock
+				if (tickerInput) tickerInput.value = "";
+				if (nameInput) nameInput.value = "";
+				if (priceInput) priceInput.value = "";
+				if (volumeInput) volumeInput.value = "";
+				if (sectorInput) sectorInput.value = "";
+				if (listedInput) listedInput.checked = true;
+			}
+			
+			catch (err) {
+				showError(err.message || "Create stock failed. (Are you logged in as admin?)");
+			}
+			finally {
+				if (submitButton) submitButton.disabled = false;
+			}
+		});
+		
+		
+	</script>
   </body>
 </html>

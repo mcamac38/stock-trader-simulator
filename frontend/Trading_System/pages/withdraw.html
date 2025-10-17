@@ -149,5 +149,78 @@
         </div>
       </footer>
     </div>
+	<script type="module">
+		import { requireAuth, withdraw, renderCash } from "../javascript/api.js"
+		
+		//Requires Login and shows current cash in a display
+		requireAuth();
+		renderCash();
+		
+		//Grabs DOM nodes
+		const form = document.querySelector("form");
+		const amountInput = document.getElementById("withdrawAmount");
+		const methodSelect = document.getElementById("withdrawMethod");
+		
+		//Utilizes message boxes otherswise falls back to alert
+		const msgSuccess = document.querySelector(".msg.success");
+		const msgError = document.querySelector(".msg.error");
+		if (msgSuccess) msgSuccess.style.display = "none";
+		if (msgError) msgError.style.display = "none";
+		
+		form.addEventListener("submit", async (e) => {
+			e.preventDefault();
+		
+			//Basic client-side validation
+			const raw = (amountInput?.value || "").trim();
+			const amount = Number(raw);
+			
+			if(!raw) || isNan(amount) ||amount <= 0) {
+				if (msgError) {
+					msgError.textContent = "Enter a valid amount greater than 0.";
+					msgError.style.display = "block";
+				}
+				else { 
+					alert("Enter a valid amount greater than 0.");
+				}
+				return;
+			}
+			
+			//Disables submit button while processing
+			const submitButton form.querySelector('button[type="submit"], input[type="submit"]);
+			if (submitButton) submitButton.disabled = true;
+			
+			try { 
+				//calls backend: POST /cash/withdraw {amount}
+				await withdraw(amount);
+				
+				//clears input plus shows successfull feeback
+				if (amountInput) amountInput.value = "";
+				if (msgSuccess) {
+					msgSuccess.textContent = "Withdrawal successful.";
+					msgSuccess.style.display = "block";
+					if (msgError) msgError.style.display = "none";
+				}
+				else {
+					alert("Withdrawal Successful.";
+				}
+				await renderCash();
+			}
+			catch (err) {
+				if (msgError) {
+					msgError.textContent = err.message || "Withdrawal failed.";
+					msgError.style.display = "block";
+					if (msgSuccess) msgSuccess.style.display = "none";
+				}
+				else {
+					alert(err.message || "Withdrawal failed.");
+				}
+					
+			}
+			finally {
+				if (submitButton) submitButton.disabled = false;
+			}
+		
+		});
+	</script>
   </body>
 </html>

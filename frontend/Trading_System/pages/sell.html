@@ -179,5 +179,84 @@
         </div>
       </footer>
     </div>
+	<script type="module">
+	import { requireAuth, placeOrder, renderCash } from "../assets/api.js";
+
+	// Requires login & (optionally) show cash in a header <span id="cash-amount">
+	requireAuth();
+	renderCash();
+
+	// Grabs DOM
+	const form = document.querySelector("form");
+	const tickerInput = document.getElementById("sellTicker") || document.getElementById("ticker");
+	const qtyInput = document.getElementById("sellQty") || document.getElementById("quantity");
+
+	// Optional message boxes (use if present; otherwise we fall back to alert)
+	const msgSuccess = document.querySelector(".msg.success");
+	const msgError = document.querySelector(".msg.error");
+	if (msgSuccess) msgSuccess.style.display = "none";
+	if (msgError) msgError.style.display = "none";
+
+	// Helper
+	const fmt = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+	// (Optional) prefill ticker via ?ticker=ACME
+	const params = new URLSearchParams(location.search);
+	const presetTicker = params.get("ticker");
+	if (presetTicker && tickerInput) tickerInput.value = presetTicker.toUpperCase();
+
+	form.addEventListener("submit", async (e) => {
+		e.preventDefault();
+
+		const rawTicker = (tickerInput?.value || "").trim().toUpperCase();
+		const rawQty = (qtyInput?.value || "").trim();
+		const qty = Number(rawQty);
+
+		if (!rawTicker) return showError("Enter a ticker symbol (e.g., ACME).");
+		if (!rawQty || isNaN(qty) || qty <= 0) return showError("Enter a valid quantity greater than 0.");
+
+		const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+		if (submitBtn) submitBtn.disabled = true;
+
+		try {
+		// POST /trades/order { ticker, side: "sell", quantity }
+		const res = await placeOrder({ ticker: rawTicker, side: "sell", quantity: qty });
+
+		if (qtyInput) qtyInput.value = "";
+			showSuccess(`SELL ${res.ticker} @ $${fmt(res.price)} × ${res.quantity} = $${fmt(res.total_value)}`);
+
+		// Refreshs cash shown
+		await renderCash();
+		} 
+		catch (err) {
+			showError(err.message || "Sell order failed.");
+		} 
+		finally {
+			if (submitBtn) submitBtn.disabled = false;
+		}
+	});
+
+	function showSuccess(message) {
+		if (msgSuccess) {
+		msgSuccess.textContent = message;
+		msgSuccess.style.display = "block";
+    } 
+	else {
+      alert(message);
+    }
+    if (msgError) msgError.style.display = "none";
+	}
+
+	function showError(message) {
+		if (msgError) {
+		msgError.textContent = message;
+		msgError.style.display = "block";
+		} 
+		else {
+			alert(message);
+		}
+		if (msgSuccess) msgSuccess.style.display = "none";
+		}
+	</script>
   </body>
 </html>
