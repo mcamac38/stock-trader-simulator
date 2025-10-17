@@ -1,5 +1,9 @@
-<script type="module">
-const BASE_URL = "http://localhost:8000"; // change if needed
+const API =
+  (typeof import !== "undefined" && import.meta && import.meta.env && import.meta.env.VITE_API_URL)
+  || (typeof window !== "undefined" && window.API_BASE_URL)
+  || "http://ec2-54-205-226-205.compute-1.amazonaws.com";
+
+const BASE_URL = API; // change if needed
 
 function token(){ return localStorage.getItem("token") || ""; }
 function setToken(t){ localStorage.setItem("token", t); }
@@ -60,7 +64,3 @@ export async function adminCreateStock(payload) {
 		//expects: { ticker, company_name, current_price, volume?, sector?, is_listed? }
 		return http("/admin/stocks", {method: "POST", auth: true, body: payload });
 }
-
-
-
-</script>
