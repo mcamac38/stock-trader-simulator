@@ -188,12 +188,17 @@
 		e.preventDefault();
 	
 		//Collect values from your current IDs
-		const fullName        = document.getElementById("fullName")?.value?.trim() || "";
-		const username        = document.getElementById("regUsername")?.value?.trim() || "";
-		const email           = document.getElementById("email")?.value?.trim() || "";
-		const confirmEmail    = document.getElementById("confirmEmail")?.value?.trim() || "";
-		const password        = document.getElementById("regPassword")?.value || "";
-		const confirmPassword = document.getElementById("confirmPassword")?.value || "";
+		const fullName        = (document.getElementById("fullName")?.value ?? "").trim();
+		const username        = (document.getElementById("regUsername")?.value ?? "").trim();
+		const email           = (document.getElementById("email")?.value ?? "").trim();
+		const confirmEmail    = (document.getElementById("confirmEmail")?.value ?? "").trim();
+		//this makes sure to find the two pass fields regardless of IDs
+		const pwdInputs = Array.from(document.querySelectorAll('input[type="password"]'));
+		const password        = (pwdInputs[0]?.value ?? "").trim();
+		const confirmPassword = (pwdInputs[1]?.value ?? "").trim();
+		
+		//Debug (remove after testing
+		console.log("DEBUG password values:", {password, confirmPassword });
 	
 		//Client-side checks
 		if (email !== confirmEmail) {
