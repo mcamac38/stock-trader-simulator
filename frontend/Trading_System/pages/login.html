@@ -113,8 +113,8 @@
 	form.addEventListener("submit", async (e) => {
 		e.preventDefault();
 		
-		const username = document.getElementID("username").value.trim();
-		const password = document.getElementID("password").value;
+		const username = document.getElementByID("username").value.trim();
+		const password = document.getElementByID("password").value;
 		
 		//Display button during request
 		const submitButton = form.querySelector('button[type="submit"]');
@@ -133,9 +133,9 @@
 				msgSuccess.style.display = "block";
 			}
 			//Supports ?next=/pages/buy.html
-			const params new URLSearchParams(window.location.search);
+			const params = new URLSearchParams(window.location.search);
 			const next = params.get("next") || "./portfolio.html";
-			setTimeout(() => { window.location.href = next; } 600);
+			setTimeout(() => { window.location.href = next; }, 600);
 		}
 		catch (err) {
 			if (msgError) {
@@ -147,7 +147,7 @@
 			}
 		}
 		finally {
-			if (submitButton) submitButton,=.disabled = false;
+			if (submitButton) submitButton.disabled = false;
 		}
 	});
 	</script>
