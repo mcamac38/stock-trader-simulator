@@ -76,7 +76,8 @@
             <h2 class="page-title" id="withdraw-title">Withdraw Funds</h2>
             <div class="section-title">Current Balance</div>
             <div class="stat">
-              <span class="label">Balance</span><span class="value">$—</span>
+              <span class="label">Balance</span>
+			  <strong>$<span id="cash-amount">-</span></strong> 
             </div>
 
             <div class="msg success" role="status" aria-live="polite">
@@ -93,7 +94,7 @@
                   type="number"
                   id="withdrawAmount"
                   name="amount"
-                  min="0"
+                  min="0.01"
                   step="0.01"
                   placeholder="0.00"
                   required
@@ -151,14 +152,14 @@
     </div>
 	<script>
 		// Replace this with your actual API Gateway Invoke URL
-		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/";
+		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
 	</script>
 	<script type="module">
 		import { requireAuth, withdraw, renderCash } from "../javascript/api.js"
 		
 		//Requires Login and shows current cash in a display
 		requireAuth();
-		renderCash();
+		renderCash("cash-amount");
 		
 		//Grabs DOM nodes
 		const form = document.querySelector("form");
@@ -178,7 +179,7 @@
 			const raw = (amountInput?.value || "").trim();
 			const amount = Number(raw);
 			
-			if(!raw) || isNan(amount) ||amount <= 0) {
+			if(!raw || Number.isNaN(amount) ||amount <= 0) {
 				if (msgError) {
 					msgError.textContent = "Enter a valid amount greater than 0.";
 					msgError.style.display = "block";
@@ -190,7 +191,7 @@
 			}
 			
 			//Disables submit button while processing
-			const submitButton form.querySelector('button[type="submit"], input[type="submit"]);
+			const submitButton = form.querySelector('button[type="submit"], input[type="submit"]);
 			if (submitButton) submitButton.disabled = true;
 			
 			try { 
@@ -200,14 +201,14 @@
 				//clears input plus shows successfull feeback
 				if (amountInput) amountInput.value = "";
 				if (msgSuccess) {
-					msgSuccess.textContent = "Withdrawal successful.";
+					msgSuccess.textContent = "Withdrawal Successful.";
 					msgSuccess.style.display = "block";
 					if (msgError) msgError.style.display = "none";
 				}
 				else {
-					alert("Withdrawal Successful.";
+					alert("Withdrawal Successful.");
 				}
-				await renderCash();
+				await renderCash("cash-amount");
 			}
 			catch (err) {
 				if (msgError) {
