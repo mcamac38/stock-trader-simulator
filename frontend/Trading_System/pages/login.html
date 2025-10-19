@@ -109,8 +109,8 @@
 	form.addEventListener("submit", async (e) => {
 		e.preventDefault();
 		
-		const username = (document.getElementByID("loginUsername")?.value || "").trim();
-		const password = (document.getElementByID("loginPassword")?.value || "").trim();
+		const username = (document.getElementByID("username")?.value || "").trim();
+		const password = (document.getElementByID("password")?.value || "").trim();
 		
 		//Basic Guard
 		if (!username || !password) {
@@ -134,12 +134,11 @@
 			//go to first authenticated page (adjust path if different)
 			window.location.href = "./portfolio.html"
 			//Shows success plus redirects (you can adjust the destination if you need)
-			if (msgSuccess) {
-				msgSuccess.textContent = "Login successful, Redirecting...";
-				msgSuccess.style.display = "block";
-			}
-			//go to first authenticated page (adjust path if different)
-			window.location.href = "./portfolio.html"
+			//if (msgSuccess) {
+			//	msgSuccess.textContent = "Login successful, Redirecting...";
+			//	msgSuccess.style.display = "block";
+			//}
+			
 			//Supports ?next=/pages/buy.html
 			//const params = new URLSearchParams(window.location.search);
 			//const next = params.get("next") || "./portfolio.html";
