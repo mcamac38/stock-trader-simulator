@@ -1,6 +1,6 @@
 const API =
   (typeof window !== "undefined" && window.API_BASE_URL) ||
-  "http://ec2-54-205-226-205.compute-1.amazonaws.com";
+  "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
 
 
 const BASE_URL = API; // change if needed
