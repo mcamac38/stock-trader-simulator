@@ -77,6 +77,7 @@
             <div class="section-title">Current Balance</div>
             <div class="stat">
               <span class="label">Balance</span><span class="value">$—</span>
+			  <strong>$<span id="cash amount">-</span></strong> 
             </div>
 
             <div class="msg success" role="status" aria-live="polite">
@@ -93,7 +94,7 @@
                   type="number"
                   id="depositAmount"
                   name="amount"
-                  min="0"
+                  min="0.01"
                   step="0.01"
                   placeholder="0.00"
                   required
@@ -151,7 +152,7 @@
     </div>
 	<script>
 		// Replace this with your actual API Gateway Invoke URL
-		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/";
+		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
 	</script>
 	<script type="module">
 		import { requireAuth, deposit, renderCash } from "../javascript/api.js";
@@ -160,12 +161,12 @@
 		requireAuth();
 		
 		//review maybe
-		renderCash();
+		renderCash("cash-amount");
 		
 		//This grabs the DOM nodes
 		const form = document.querySelector("form");
-		const amountInput = document.getElementId("depositAmount");
-		const sourceSelect = document.getElementId("fundingSource");
+		const amountInput = document.getElementById("depositAmount");
+		const sourceSelect = document.getElementById("fundingSource");
 		
 		//These are optional message boxes (they can be used to add detail to the page)
 		const msgSuccess = document.querySelector(".msg.success");
@@ -179,7 +180,7 @@
 			//This takes care of basic validation
 			const raw = (amountInput?.value || "").trim();
 			const amount = Number(raw);
-			if (!raw || isNan(amount) || amount <= 0) {
+			if (!raw || Number.isNaN(amount) || amount <= 0) {
 				if (msgError) {
 					msgError.textContent = "Enter a valid amount greater than 0.";
 					msgError.style.display = "block";
@@ -212,7 +213,7 @@
 				}
 				
 				//Refreshes the cash shown in the display
-				await renderCash();
+				await renderCash("cash-amount");
 			}
 			
 			catch (err) {
