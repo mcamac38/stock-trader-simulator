@@ -5,6 +5,9 @@ const API =
 
 const BASE_URL = API; // change if needed
 
+window.API_BASE_URL = API;
+window.BASE_URL = BASE_URL;
+
 function token(){ return localStorage.getItem("token") || ""; }
 function setToken(t){ localStorage.setItem("token", t); }
 function clearToken(){ localStorage.removeItem("token"); }
