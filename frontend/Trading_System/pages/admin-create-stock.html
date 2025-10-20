@@ -208,7 +208,7 @@
 				return showError("Enter a ticker (e.g., ACME).");
 			if (!company_name)
 				return showError("Enter a company name.");
-			if (!priceRaw || Number.isNan(current_price) || current_price <= 0)
+			if (!priceRaw || Number.isNaN(current_price) || current_price <= 0)
 				return showError("Enter a valid starting price.");
 			
 			//Disable submit to avoid double posts
@@ -218,7 +218,7 @@
 			try {
 				//Builds the payload 
 				const payload = { ticker, company_name, current_price };
-				if (typeof volume == "number" && !Number.isNan(volume)) payload.volume = volume;
+				if (typeof volume == "number" && !Number.isNaN(volume)) payload.volume = volume;
 				if (sector) payload.sector = sector;
 				if (typeof is_listed == "boolean") payload.is_listed = is_listed;
 				
