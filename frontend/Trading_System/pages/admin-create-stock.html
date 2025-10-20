@@ -215,7 +215,7 @@
 				
 				
 				//calls the backend (must be admin otherwise it will throw a 403)
-				const res - await adminCreateStock(payload);
+				const res = await adminCreateStock(payload);
 				
 				//if successful UX
 				showSuccess('Created ${res?.ticker || ticker} (${company_name}) @ $${fmt(current_price)}.');
