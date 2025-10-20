@@ -13,7 +13,7 @@ app = Flask(__name__)
 
 # Allow your Amplify frontend (set to your exact Amplify URL)
 AMPLIFY_ORIGIN = os.getenv("AMPLIFY_ORIGIN", "https://main.d2bmkzvarvu1na.amplifyapp.com")
-CORS(app, resources={r"/*": {"origins": [AMPLIFY_ORIGIN, "http://localhost:5173", "http://127.0.0.1:5173"]}}, supports_credentials=True, allo>
+CORS(app, resources={r"/*": {"origins": [AMPLIFY_ORIGIN, "http://localhost:5173", "http://127.0.0.1:5173"]}}, supports_credentials=True, allow_headers=["Content-Type", "Authorization"], expose_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "OPTIONS"])
 
 # ---- Demo in-memory "DB" ----
 USERS = {}      # username -> {password, full_name, email, role}
