@@ -154,7 +154,7 @@
     </div>
 	<script>
 		// Replace this with your actual API Gateway Invoke URL
-		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/";
+		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
 	</script>
 	<script type="module">
 		import { requireAuth, adminCreateStock } from "../javascript/api.js";
@@ -176,6 +176,15 @@
 		//message box stuff if we have them
 		const msgSuccess = document.querySelector(".msg.success");
 		const msgError = document.querySelector(".msg.error");
+		const show = (el, text) => { if (el) { el.textContent = text; el.style.display = "block"; } };
+		const hide = (el) => { if (el) el.style.display = "none"; };
+		const showError   = (text) => show(msgError, text);
+		const showSuccess = (text) => show(msgSuccess, text);
+
+		// start hidden
+		hide(msgSuccess);
+		hide(msgError);
+		
 		if (msgSuccess) msgSuccess.style.display = "none";
 		if (msgError) msgError.style.display = "none";
 		
@@ -199,7 +208,7 @@
 				return showError("Enter a ticker (e.g., ACME).");
 			if (!company_name)
 				return showError("Enter a company name.");
-			if (!priceRaw || isNan(current_price) || current_price <= 0)
+			if (!priceRaw || Number.isNan(current_price) || current_price <= 0)
 				return showError("Enter a valid starting price.");
 			
 			//Disable submit to avoid double posts
@@ -218,7 +227,7 @@
 				const res = await adminCreateStock(payload);
 				
 				//if successful UX
-				showSuccess('Created ${res?.ticker || ticker} (${company_name}) @ $${fmt(current_price)}.');
+				showSuccess(`Created ${res?.ticker || ticker} (${company_name}) @ $${fmt(current_price)}.`);
 				
 				//clears fields for re-entry of another Stock
 				if (tickerInput) tickerInput.value = "";
