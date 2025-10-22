@@ -9,6 +9,17 @@ try:
 except Exception:
     psycopg2 = None
 
+def get_db_connection():
+    import psycopg2
+    conn = psycopg2.connect(
+        host=os.getenv("DATABASE_HOST"),
+        port=os.getenv("DATABASE_PORT", "5432"),
+        dbname=os.getenv("DATABASE_NAME"),
+        user=os.getenv("DATABASE_USER"),
+        password=os.getenv("DATABASE_PASSWORD")
+    )
+    return conn
+
 app = Flask(__name__)
 
 # Allow your Amplify frontend (set to your exact Amplify URL)
@@ -67,7 +78,7 @@ def get_current_user():
     token = auth.split(" ", 1)[1].strip()
     # For this demo, token == username
     if not token or token not in USERS:
-	        return None
+        return None
     u = USERS[token].copy()
     u["username"] = token
     return u
@@ -170,49 +181,113 @@ def admin_create_stock():
     #    return jsonify({"detail": "Forbidden"}), 403
 
     body = request.get_json(force=True) or {}
-
+	
     #required fields
     ticker = (body.get("ticker") or "").strip().upper()
     company_name = (body.get("company_name") or "").strip()
     try:
-        current_price = float(body.get("current_price", 0))
-    except (TypeError, ValueError):
+        current_price = float(body.get("current_price"))
+    except Exception:
         current_price = 0.00
-
-    if not ticker:
-        return jsonify({"detail": "ticker is required"}), 400
-    if not company_name:
-        return jsonify({"detail": "company name required"}), 400
-    if current_price <= 0:
-        return jsonify({"detail": "current price must be > 0"}), 400
-
-    #Optional fields
     volume = body.get("volume")
     if volume is not None:
         try:
             volume = int(volume)
-        except (TypeError, ValueError):
-            return jsonify({"detail": "volume must be an integer"}), 400
-    sector = (body.get("sector") or "").strip() or None
+        except Exception:
+            volume = None
+
+    sector = body.get("sector") or None
     is_listed = bool(body.get("is_listed", True))
 
-    #In-memory "DB"
-    if "STOCKS" not in globals():
-        globals()["STOCKS"] = {}
-    if ticker in STOCKS:
-        return jsonify({"detail": "ticker already exists"}), 400
+    if not ticker or not company_name or current_price <=0:
+        return jsonify({"detail": "Ticker and company name, and positive current price required"})
 
-    STOCKS[ticker] = {
-        "ticker": ticker,
-        "company_name": company_name,
-        "current_price": float(current_price),
-        "volume": volume if volume is not None else 0,
-        "sector": sector,
-        "is_listed": is_listed,
-        "created_by": user["username"],
-    }
+    try:
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO stocks (ticker, company_name, current_price, volume, sector, is_listed, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (ticker) DO UPDATE
+                      SET company_name = EXCLUDED.company_name,
+                          current_price = EXCLUDED.current_price,
+                          volume = EXCLUDED.volume,
+                          sector = EXCLUDED.sector,
+                          is_listed = EXCLUDED.is_listed,
+                          created_by = EXCLUDED.created_by;
+                """, (ticker, company_name, current_price, volume, sector, is_listed, user["username"]))
+        conn.close()
+        return jsonify({
+            "ok": True,
+            "ticker": ticker,
+            "company_name": company_name,
+            "current_price": current_price
+        }), 201
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
 
-    return jsonify(STOCKS[ticker]), 201
+@app.route("/market/tickers", methods=["GET"])
+def list_tickers():
+    """
+    Returns a simple list of tradable tickers.
+    Example item:
+    { "ticker":"ACME", "company_name":"Acme Corp", "current_price": 99.99 }
+    """
+    try:
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT ticker, company_name, current_price
+                    FROM stocks
+                    WHERE is_listed = TRUE
+                    ORDER BY ticker ASC
+                    LIMIT 500
+                """)
+                rows = cur.fetchall()
+        conn.close()
+
+        data = [
+            {"ticker": r[0], "company_name": r[1], "current_price": float(r[2])}
+            for r in rows
+        ]
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+@app.route("/market/tickers/<ticker>", methods=["GET"])
+def get_ticker(ticker):
+    ticker = (ticker or "").strip().upper()
+    if not ticker:
+        return jsonify({"detail": "ticker required"}), 400
+    try:
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT ticker, company_name, current_price, volume, sector, is_listed, created_by, created_at
+                    FROM stocks
+                    WHERE ticker = %s
+                """, (ticker,))
+                row = cur.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({"detail": "Not found"}), 404
+
+        return jsonify({
+            "ticker": row[0],
+            "company_name": row[1],
+            "current_price": float(row[2]),
+            "volume": row[3],
+            "sector": row[4],
+            "is_listed": row[5],
+            "created_by": row[6],
+            "created_at": row[7].isoformat() if row[7] else None
+        })
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
 
 if __name__ == "__main__":
     # Only used if you run app.py directly; systemd runs gunicorn

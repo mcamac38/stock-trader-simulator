@@ -230,5 +230,28 @@
 			}
 		});
 	</script>
+	<script type="module">
+      function renderBalance() {
+        const token = localStorage.getItem("token");
+        if (!token) return; // not logged in, skip
+        fetch(API_BASE_URL + "/account", {
+          headers: { Authorization: "Bearer " + token }
+        })
+          .then(r => r.json())
+          .then(({ cash_balance }) => {
+            const el = document.getElementById("cash-amount");
+            if (el) {
+              el.textContent = Number(cash_balance)
+                .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+          })
+          .catch(() => {
+            // optional: show a subtle error message
+          });
+      }
+
+      // Run after page load
+      document.addEventListener("DOMContentLoaded", renderBalance);
+    </script>
   </body>
 </html>
