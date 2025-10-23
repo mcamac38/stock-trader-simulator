@@ -100,6 +100,15 @@
 
             <form class="form" action="#" method="post" novalidate>
               <div class="form-row">
+			    <label for="tickerSelect">Choose a Stock</label>
+			    <select id="tickerSelect" class="form-select">
+                  <option value="">Loading...</option>
+			    </select>
+			    <div style="font-size: 12px; color: #666; margin: 4px 0 10px;">
+			      (Selecting a stock will auto-fill the Ticker box below. You can also type a ticker manually.)
+                </div>
+              </div>
+			  <div class="form-row">
                 <label for="buyTicker">Stock Ticker</label>
                 <input
                   type="text"
@@ -265,5 +274,51 @@
 			if (msgSuccess) msgSuccess.style.display = "none";
 		}
 	</script>
+	<script type="module">
+  import { listTickers } from "../javascript/api.js";
+
+  const select = document.getElementById("tickerSelect");
+  const tickerInput =
+    document.getElementById("buyTicker") ||
+    document.querySelector('[name="ticker"]');
+
+  function makeOpt(label, value = "") {
+    const o = document.createElement("option");
+    o.value = value;
+    o.textContent = label;
+    return o;
+  }
+
+  (async () => {
+    try {
+      const stocks = await listTickers();
+      select.innerHTML = "";
+      select.appendChild(makeOpt("Select a Stock", ""));
+      stocks.forEach(s =>
+        select.appendChild(makeOpt(`${s.ticker} — ${s.company_name}`, s.ticker))
+      );
+    } catch (e) {
+      select.innerHTML = "";
+      select.appendChild(makeOpt("Failed to load stocks", ""));
+      select.disabled = true;
+      console.error(e);
+    }
+  })();
+
+  // Sync dropdown → text input
+  if (select && tickerInput) {
+    select.addEventListener("change", () => {
+      tickerInput.value = select.value || "";
+      if (tickerInput.value) tickerInput.value = tickerInput.value.toUpperCase();
+    });
+
+    // Sync text input → dropdown
+    tickerInput.addEventListener("input", () => {
+      const v = (tickerInput.value || "").toUpperCase();
+      const match = [...select.options].find(o => o.value === v);
+      select.value = match ? v : "";
+    });
+  }
+</script>
   </body>
 </html>
