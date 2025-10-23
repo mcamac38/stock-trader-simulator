@@ -150,5 +150,23 @@
         </div>
       </footer>
     </div>
+	<script>
+	  import { listTickers } from "../javascript/api.js";
+	  
+	  listTickers().then(stocks => {
+	    const tbody = document.querySelector("tbody");
+		if (!body) return;
+		tbody.innerHTML = "";
+		stocks.forEach(s => {
+		  const tr = document.createElement("tr");
+		  tr.innerHTML = `
+		    <td>${s.ticker}</td>
+			<td>${s.company_name}</td>
+			<td>$${Number(s.current_price).toFixed(2)}</td>
+			<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>`;
+		  tbody.appendChild(tr);
+		});
+	  });
+	</script>
   </body>
 </html>
