@@ -262,5 +262,20 @@
 		if (msgSuccess) msgSuccess.style.display = "none";
 		}
 	</script>
+	<script type="module">
+      import { listTickers } from "../js/api.js";
+
+      listTickers().then(stocks => {
+        const select = document.getElementById("tickerSelect");
+        if (!select) return;
+        select.innerHTML = "<option value=''>Select Stock to Sell</option>";
+        stocks.forEach(s => {
+          const opt = document.createElement("option");
+          opt.value = s.ticker;
+          opt.textContent = `${s.ticker} - ${s.company_name}`;
+          select.appendChild(opt);
+        });
+      });
+    </script>
   </body>
 </html>
