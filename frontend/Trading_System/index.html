@@ -151,7 +151,34 @@
       </footer>
     </div>
 	<script>
-	  import { listTickers } from "../javascript/api.js";
+	  import { token, listTickers } from "../javascript/api.js";
+	  
+	  // List the pages that require auth
+	  const protectedPaths = new Set([
+	    "/pages/portfolio",
+		"/pages/buy.html",
+        "/pages/sell.html",
+        "/pages/transactions.html",
+        "/pages/deposit.html",
+        "/pages/withdraw.html",
+        "/pages/admin-create-stock.html"
+      ]);
+	  
+	  //Intercepts clicks on links on the Home page
+	  document.addEventListener("click", (ev) => {
+	    const a = ev.target.closet("a[href]");
+	   	if (!a) return;
+	  	
+        // Resolve the link as a URL so we can compare pathnames reliably
+        const url = new URL(a.getAttribute("href"), location.origin);
+        
+        // If it’s a protected page and no token, bounce to login
+        if (protectedPaths.has(url.pathname) && !token()) {
+          ev.preventDefault();
+          location.href = "/pages/login.html";
+        }
+      });
+	  
 	  
 	  listTickers().then(stocks => {
 	    const tbody = document.querySelector("tbody");
