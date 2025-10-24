@@ -166,7 +166,7 @@
 	  
 	  //Intercepts clicks on links on the Home page
 	  document.addEventListener("click", (ev) => {
-	    const a = ev.target.closet("a[href]");
+	    const a = ev.target.closest("a[href]");
 	   	if (!a) return;
 	  	
         // Resolve the link as a URL so we can compare pathnames reliably
