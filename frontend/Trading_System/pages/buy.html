@@ -275,50 +275,52 @@
 		}
 	</script>
 	<script type="module">
-  import { listTickers } from "../javascript/api.js";
+      import { listTickers, requireAuth } from "../javascript/api.js";
+      requireAuth();
+  
+      const select = document.getElementById("tickerSelect");
+      const tickerInput =
+        document.getElementById("buyTicker") ||
+        document.querySelector('[name="ticker"]');
 
-  const select = document.getElementById("tickerSelect");
-  const tickerInput =
-    document.getElementById("buyTicker") ||
-    document.querySelector('[name="ticker"]');
+      function makeOpt(label, value = "") {
+        const o = document.createElement("option");
+        o.value = value;
+        o.textContent = label;
+        return o;
+      }
 
-  function makeOpt(label, value = "") {
-    const o = document.createElement("option");
-    o.value = value;
-    o.textContent = label;
-    return o;
-  }
+      (async () => {
+        try {
+          const stocks = await listTickers();
+          select.innerHTML = "";
+          select.appendChild(makeOpt("Select a Stock", ""));
+          stocks.forEach(s =>
+            select.appendChild(makeOpt(`${s.ticker} — ${s.company_name}`, s.ticker))
+          );
+        } 
+		catch (e) {
+          select.innerHTML = "";
+          select.appendChild(makeOpt("Failed to load stocks", ""));
+          select.disabled = true;
+          console.error(e);
+        }
+      })();
 
-  (async () => {
-    try {
-      const stocks = await listTickers();
-      select.innerHTML = "";
-      select.appendChild(makeOpt("Select a Stock", ""));
-      stocks.forEach(s =>
-        select.appendChild(makeOpt(`${s.ticker} — ${s.company_name}`, s.ticker))
-      );
-    } catch (e) {
-      select.innerHTML = "";
-      select.appendChild(makeOpt("Failed to load stocks", ""));
-      select.disabled = true;
-      console.error(e);
-    }
-  })();
-
-  // Sync dropdown → text input
-  if (select && tickerInput) {
-    select.addEventListener("change", () => {
-      tickerInput.value = select.value || "";
-      if (tickerInput.value) tickerInput.value = tickerInput.value.toUpperCase();
-    });
-
-    // Sync text input → dropdown
-    tickerInput.addEventListener("input", () => {
-      const v = (tickerInput.value || "").toUpperCase();
-      const match = [...select.options].find(o => o.value === v);
-      select.value = match ? v : "";
-    });
-  }
-</script>
+      // Sync dropdown → text input
+      if (select && tickerInput) {
+        select.addEventListener("change", () => {
+          tickerInput.value = select.value || "";
+          if (tickerInput.value) tickerInput.value = tickerInput.value.toUpperCase();
+        });
+        
+        // Sync text input → dropdown
+        tickerInput.addEventListener("input", () => {
+          const v = (tickerInput.value || "").toUpperCase();
+          const match = [...select.options].find(o => o.value === v);
+          select.value = match ? v : "";
+        });
+      }
+    </script>
   </body>
 </html>
