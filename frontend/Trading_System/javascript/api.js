@@ -19,6 +19,20 @@ async function http(path, { method="GET", body, auth=false } = {}) {
   const res = await fetch(`${BASE_URL}${path}`, {
     method, headers, body: body ? JSON.stringify(body) : undefined
   });
+  
+  // NEW: bounce to login if token is missing/expired
+  if (res.status === 401) {
+    clearToken();
+    const inPages = location.pathname.includes("/pages/");
+    const loginPath = inPages ? "/pages/login.html" : "/login.html";
+    location.href = loginPath;
+    return; // stop further handling
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.detail || res.statusText);
+  return data;
+  
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.detail || res.statusText);
   return data;
@@ -51,8 +65,13 @@ export async function getTransactions(){ return http("/portfolio/transactions", 
 
 // Guards/helpers
 export function requireAuth(){
-  if (!token()) location.href = "./login.html";
+  if (!token()) {
+    const inPages = location.pathname.includes("/pages/");
+    const loginPath = inPages ? "/pages/login.html" : "/login.html";
+    location.href = loginPath;
+  }
 }
+
 export async function renderCash(spanId="cash-amount"){
   try {
     const { cash_balance } = await getBalance();
