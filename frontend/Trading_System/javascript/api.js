@@ -82,3 +82,5 @@ export async function adminCreateStock(payload) {
 		//expects: { ticker, company_name, current_price, volume?, sector?, is_listed? }
 		return http("/admin/stocks", {method: "POST", auth: true, body: payload });
 }
+
+export { token, setToken, clearToken };
