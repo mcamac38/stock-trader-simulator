@@ -32,10 +32,6 @@ async function http(path, { method="GET", body, auth=false } = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.detail || res.statusText);
   return data;
-  
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.detail || res.statusText);
-  return data;
 }
 
 // Auth
