@@ -54,7 +54,7 @@ export async function withdraw(amount){ return http("/cash/withdraw", { method:"
 
 // Trades & Portfolio
 export async function placeOrder({ ticker, side, quantity }){
-  return http("/trades/order", { method:"POST", auth:true, body:{ ticker, side, quantity: Number(quantity) }});
+  return http("/trade/buy", { method:"POST", auth:true, body:{ ticker, side, quantity: Number(quantity) }});
 }
 export async function getHoldings(){ return http("/portfolio/holdings", { auth:true }); }
 export async function getTransactions(){ return http("/portfolio/transactions", { auth:true }); }
