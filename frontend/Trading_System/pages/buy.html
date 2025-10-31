@@ -223,7 +223,7 @@
 		
 		//This fethces the price for a ticker and render it
 		async function loadPrice(t) {
-		    const ticker = (t || ""),toUpperCase().trim();
+		    const ticker = (t || "").toUpperCase().trim();
 			if (!ticker) {
 			    currentPrice = null;
 				priceEl.textContent = "$-";
