@@ -216,6 +216,55 @@
 		
 		const fmt = (n) => Number(n).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2 });
 		
+		// --- Current Price & Total Cost User Interface targets ---
+		const priceEl = document.getElementById("price-value");
+		const totalEl = document.getElementById("total-value");
+		let currentPrice = null;
+		
+		//This fethces the price for a ticker and render it
+		async function loadPrice(t) {
+		    const ticker = (t || ""),toUpperCase().trim();
+			if (!ticker) {
+			    currentPrice = null;
+				priceEl.textContent = "$-";
+				totalEl.textContent = "$-";
+				return
+			}
+			
+			try {
+				const r = await fetch (`${window.API_BASE_URL}/market/tickers/${encodeURIComponent(ticker)}`, {
+					headers: {
+						"Authorization": `Bearer ${localStorage.getItem("access_token") || ""}`
+					}
+				});
+				if (!r.ok) throw new Error(`HTTP ${r.status}`);
+				const data = await r.json();
+				currentPrice = Number(data.current_price);
+				priceEl.textContent = `$${fmt(currentPrice)}`;
+			
+				// refreshes the total if the quantity is already typed
+				const q = Number(qtyInput.value || 0);
+				totalEl.textContent = q > 0 && Number.isFinite(currentPrice) ? `$${fmt(q * currentPrice)}` : "$-"	;
+			}
+			catch (e) {
+				console.error("Failed to load price:", e);
+				currentPrice = null;
+				priceEl.textContent = "$-";
+				totalEl.textContent = "$-";
+			}
+	    }
+		
+		// This is for when the user picks from the dropdown, should sync the input and load the Price
+		
+		select.addEventListener("change", () => {
+		    const v = (select.value || "").toUpperCase();
+			tickerInput.value = v;
+			loadPrice(v);
+		});
+		
+		// Also this will load the price for when the user finishes typing in the ticker too
+		tickerInput.addEventListener("blur", () => loadPrice(tickerInput.value));
+		
 		form.addEventListener("submit", async (e) => {
 			e.preventDefault();
 			
