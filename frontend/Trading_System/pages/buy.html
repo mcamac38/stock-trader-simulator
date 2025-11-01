@@ -347,7 +347,11 @@
 	  const priceEl = document.getElementById("price-value");
 	  const totalEl = document.getElementById("total-value");
 	  const pricesByTicker = (window.pricesByTicker = window.pricesByTicker || {});
-	  const fmt = (n) => Number(n).toLocalString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	  const fmt = (n) =>
+		(isFinite(globalThis.Number(n)) ? globalThis.Number(n) : 0).toLocaleString(
+		undefined,
+		{ minimumFractionDigits: 2, maximumFractionDigits: 2 }
+		);
 
       function makeOpt(label, value = "") {
         const o = document.createElement("option");
