@@ -332,18 +332,97 @@
 	</script>
 	<script type="module">
       import { listTickers } from "../javascript/api.js";
-
-      listTickers().then(stocks => {
-        const select = document.getElementById("tickerSelect");
-        if (!select) return;
-        select.innerHTML = "<option value=''>Select Stock to Sell</option>";
-        stocks.forEach(s => {
-          const opt = document.createElement("option");
-          opt.value = s.ticker;
-          opt.textContent = `${s.ticker} - ${s.company_name}`;
-          select.appendChild(opt);
-        });
+	  
+	  const select = document.getElementById("tickerSelect");
+      const tickerInput =
+        document.getElementById("sellTicker") ||
+        document.querySelector('[name="ticker"]');
+	  const qtyInput = document.getElementById("sellQty");
+	  const priceEl = document.getElementById("price-value");
+	  const totalEl = document.getElementById("total-value");
+	  const pricesByTicker = (window.pricesByTicker = window.pricesByTicker || {});
+	  const fmt = (n) =>
+		(isFinite(globalThis.Number(n)) ? globalThis.Number(n) : 0).toLocaleString(
+		undefined,
+		{ minimumFractionDigits: 2, maximumFractionDigits: 2 }
+		);
+		
+	  function makeOpt(label, value = "") {
+        const o = document.createElement("option");
+        o.value = value;
+        o.textContent = label;
+        return o;
+      }
+      
+	  (async () => {
+        try {
+          const stocks = await listTickers();
+		  select.innerHTML = "";
+          select.appendChild(makeOpt("Select a Stock", ""));
+          stocks.forEach(s => {
+            select.appendChild(makeOpt(`${s.ticker} — ${s.company_name}`, s.ticker));
+			pricesByTicker[s.ticker] = Number(s.current_price);
+          });
+        }
+		catch (e) {
+          select.innerHTML = "";
+          select.appendChild(makeOpt("Failed to load stocks", ""));
+          select.disabled = true;
+          console.error(e);
+        }
+      })();
+	  
+	  function renderTotals() {
+	      const q = Number(qtyInput.value || 0);
+		  const t = (tickerInput.value || "").toUpperCase().trim();
+		  const p = pricesByTicker[t];
+		  if (Number.isFinite(p)) {
+		      priceEl.textContent = `${fmt(p)}`
+			  totalEl.textContent = q > 0 ? `${fmt(q * p)}` : "-";
+	      }
+          else {
+	          priceEl.textContent = "-";
+		      totalEl.textContent = "-";
+	      }
+	  }
+	  
+	  // Events to keep user interface in sync
+	  select.addEventListener("change", () => {
+      tickerInput.value = (select.value || "").toUpperCase();
+      renderTotals();
       });
+	  tickerInput.addEventListener("blur", renderTotals);
+      qtyInput.addEventListener("input", renderTotals);
+
+      // Initial render
+      renderTotals();
+
+      // Sync dropdown → text input
+      if (select && tickerInput) {
+        select.addEventListener("change", () => {
+          tickerInput.value = select.value || "";
+          if (tickerInput.value) tickerInput.value = tickerInput.value.toUpperCase();
+        });
+        
+        // Sync text input → dropdown
+        tickerInput.addEventListener("input", () => {
+          const v = (tickerInput.value || "").toUpperCase();
+          const match = [...select.options].find(o => o.value === v);
+          select.value = match ? v : "";
+        });
+      }
+	  
+    //  listTickers().then(stocks => {
+    //    const select = document.getElementById("tickerSelect");
+    //    if (!select) return;
+    //    select.innerHTML = "<option value=''>Select Stock to Sell</option>";
+    //    stocks.forEach(s => {
+    //      const opt = document.createElement("option");
+    //      opt.value = s.ticker;
+    //      opt.textContent = `${s.ticker} - ${s.company_name}`;
+    //      select.appendChild(opt);
+    //    });
+    //  });
     </script>
   </body>
 </html>
