@@ -79,7 +79,7 @@
                 <div class="section-title">Your Capital</div>
                 <div class="stat">
                   <span class="label">Balance</span>
-                  $<span class="value" id="cash-amount">$—</span>
+                  $<span class="value" id="cash-amount">—</span>
                 </div>
               </div>
               <div>
@@ -134,14 +134,14 @@
                   <div class="section-title">Current Price</div>
                   <div class="stat">
                     <span class="label">Price</span>
-                    $<span class="value" id="price-value">$—</span>
+                    $<span class="value" id="price-value">—</span>
                   </div>
                 </div>
                 <div>
                   <div class="section-title">Total Cost</div>
                   <div class="stat">
                     <span class="label">Total</span>
-                    $<span class="value" id="total-value">$—</span>
+                    $<span class="value" id="total-value">—</span>
                   </div>
                 </div>
               </div>
@@ -221,15 +221,26 @@
 		const priceEl = document.getElementById("price-value");
 		const totalEl = document.getElementById("total-value");
 		let currentPrice = null;
+		window.pricesByTicker = window.pricesByTicker || {};
+		const pricesByTicker = window.pricesByTicker; // <- cache
 		
 		//This fethces the price for a ticker and render it
 		async function loadPrice(t) {
 		    const ticker = (t || "").toUpperCase().trim();
 			if (!ticker) {
 			    currentPrice = null;
-				priceEl.textContent = "$-";
-				totalEl.textContent = "$-";
+				priceEl.textContent = "-";
+				totalEl.textContent = "-";
 				return
+			}
+			
+			const cached = (window.pricesByTicker || {})[ticker];
+			if (Number.isFinite(cached)) {
+			  currentPrice = cached;
+			  priceEl.textContent = `${fmt(currentPrice)}`;
+			  const q = Number(qtyInput.value || 0);
+			  totalEl.textContent = q > 0 && Number.isFinite(currentPrice) ? `${fmt(q * currentPrice)}` : "-";
+			  return;
 			}
 			
 			try {
@@ -241,17 +252,17 @@
 				if (!r.ok) throw new Error(`HTTP ${r.status}`);
 				const data = await r.json();
 				currentPrice = Number(data.current_price);
-				priceEl.textContent = `$${fmt(currentPrice)}`;
+				priceEl.textContent = `${fmt(currentPrice)}`;
 			
 				// refreshes the total if the quantity is already typed
 				const q = Number(qtyInput.value || 0);
-				totalEl.textContent = q > 0 && Number.isFinite(currentPrice) ? `$${fmt(q * currentPrice)}` : "$-"	;
+				totalEl.textContent = q > 0 && Number.isFinite(currentPrice) ? `${fmt(q * currentPrice)}` : "-"	;
 			}
 			catch (e) {
 				console.error("Failed to load price:", e);
 				currentPrice = null;
-				priceEl.textContent = "$-";
-				totalEl.textContent = "$-";
+				priceEl.textContent = "-";
+				totalEl.textContent = "-";
 			}
 	    }
 		
@@ -326,12 +337,17 @@
 	</script>
 	<script type="module">
       import { listTickers, requireAuth } from "../javascript/api.js";
-      requireAuth();
+      //requireAuth(); already called in first module
   
       const select = document.getElementById("tickerSelect");
       const tickerInput =
         document.getElementById("buyTicker") ||
         document.querySelector('[name="ticker"]');
+	  const qtyInput = document.getElementById("buyQty");
+	  const priceEl = document.getElementById("price-value");
+	  const totalEl = document.getElementById("total-value");
+	  const pricesByTicker = (window.pricesByTicker = window.pricesByTicker || {});
+	  const fmt = (n) => Number(n).toLocalString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
       function makeOpt(label, value = "") {
         const o = document.createElement("option");
@@ -343,11 +359,12 @@
       (async () => {
         try {
           const stocks = await listTickers();
-          select.innerHTML = "";
+		  select.innerHTML = "";
           select.appendChild(makeOpt("Select a Stock", ""));
-          stocks.forEach(s =>
-            select.appendChild(makeOpt(`${s.ticker} — ${s.company_name}`, s.ticker))
-          );
+          stocks.forEach(s => {
+            select.appendChild(makeOpt(`${s.ticker} — ${s.company_name}`, s.ticker));
+			pricesByTicker[s.ticker] = Number(s.current_price);
+          });
         } 
 		catch (e) {
           select.innerHTML = "";
@@ -356,6 +373,30 @@
           console.error(e);
         }
       })();
+	  
+	  function renderTotals() {
+	      const q = Number(qtyInput.value || 0);
+		  const t = (tickerInput.value || "").toUpperCase().trim();
+		  const p = pricesByTicker[t];
+		  if (Number.isFinite(p)) {
+		      priceEl.textContent = `${fmt(p)}`
+			  totalEl.textContent = q > 0 ? `${fmt(q * p)}` : "-";
+	      }
+      else {
+	      priceEl.textContent = "-";
+		  totalEl.textContent = "-";
+	  }
+	  
+	  // Events to keep user interface in sync
+	  select.addEventListener("change", () => {
+      tickerInput.value = (select.value || "").toUpperCase();
+      renderTotals();
+      });
+	  tickerInput.addEventListener("blur", renderTotals);
+      qtyInput.addEventListener("input", renderTotals);
+
+      // Initial render
+      renderTotals();
 
       // Sync dropdown → text input
       if (select && tickerInput) {
