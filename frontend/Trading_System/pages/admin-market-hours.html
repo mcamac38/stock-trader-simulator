@@ -183,17 +183,43 @@
 	  form?.addEventListener("submit", async (ev) => {
 	    ev.preventDefault(); // prevents full-page POST
 	    disableSave(true);
-	    try {
-	      const payload = {
-		    open_time: elOpen?.value || "",
-		    close_time: elClose?.value || "",
-		    tz_name: (elTz?.value || "").trim() || "America/New_York"
+	    
+	    const payload = {
+		  open_time: elOpen?.value || "",
+		  close_time: elClose?.value || "",
+		  tz_name: (elTz?.value || "").trim() || "America/New_York"
 		  };
-		  const r = await updateMarketHours(payload);
-		  showOK(`Saved: ${r.open_time}-${r.close_time} (${r.tz_name})`);
+        try {		
+		  const r = await updateMarketHours(payload)
+		    .catch(err => ({__failed: true, err}));
+			
+		  if (!r || r.__failed) {
+		    const res = await fetch(`${window.BASE_URL}/admin/market-hours`, {
+			  method: "PUT",
+			  headers: {
+			    "Content-Type": "application/json",
+				"Authorization": `Bearer ${localStorage.getItem("token") || ""}`
+			  },
+			  body: JSON.stringify(payload),
+			});
+			
+		  if (!res.ok) {
+			// show server-provided detail if present
+			let bodyText = "";
+			try { bodyText = await res.text(); } catch {}
+			let detail = "Update failed.";
+			try { detail = (JSON.parse(bodyText).detail) || detail; } catch {}
+			throw new Error(detail);
+			}
+		  }
+		  const open = payload.open_time;
+		  const close = payload.close_time;
+		  const tz = payload.tz_name;
+		  showOK(`Saved: ${open}–${close} (${tz})`);
+		   
 		}
 		catch (e) {
-		  const detail = e?.detail || e?.body?.detail || "Update failed";
+		  const detail = e?.message || e?.body?.detail || "Update failed";
 		  showErr(detail);
 		}
 		finally {
