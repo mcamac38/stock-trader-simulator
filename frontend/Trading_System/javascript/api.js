@@ -46,6 +46,10 @@ export async function loginUser({ username, password }) {
 
 // Market
 export async function listTickers(){ return http("/market/tickers"); }
+export async function getMarketHours(){ return http("admin/market-hours", {auth:true}); }
+export async function updateMarketHours({open_time, close_time, tz_name}){ return http("/admin/market-hours", { method:"PUT", auth:true, body:{open_time, close_time, tz_name } }) }
+export async function getPublicMarketHours(){ return http("/market/hours"); }
+export async function getMarketStatus(){ return http("/market/status"); }
 
 // Account & Cash
 export async function getBalance(){ return http("/account", { auth:true }); }
@@ -55,6 +59,8 @@ export async function withdraw(amount){ return http("/cash/withdraw", { method:"
 // Trades & Portfolio
 export async function placeOrder({ ticker, side, quantity }){
   return http("/trade/buy", { method:"POST", auth:true, body:{ ticker, side, quantity: Number(quantity) }});
+ export async function sellOrder({ticker, side, quantity }){
+  return http("/trade/sell", {method:"POST", auth: true, body:{ticker, side, quantity: Number(quantity) }});
 }
 export async function getHoldings(){ return http("/portfolio/holdings", { auth:true }); }
 export async function getTransactions(){ return http("/portfolio/transactions", { auth:true }); }

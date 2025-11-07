@@ -1,3 +1,4 @@
+from __future__ import annotations
 import time, jwt, os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -138,6 +139,102 @@ def db_withdraw(user_id: str, amount: float) -> float:
                 # Either user not found or insufficient funds
                 raise ValueError("Insufficient funds")
             return float(row[0])
+            
+            # --- Administrative Controls ---
+def db_get_market_hours():
+    """
+    Returns {"open_time": "6:00", "close_time": "17:00", "tz_name": "America/New_York"}
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT open_time, close_time, tz_time
+                    FROM market_hours
+                    WHERE id = TRUE
+                    LIMIT 1
+                """)
+                row = cur.fetchone()
+                if not row:
+                    # Fallback if table exists but row is missing
+                    return {"open_time": "6:00", "close_time": "17:00", "tz_name": "America/New_York"}
+                # row[0], and row[1] are POSTGRES time converted to HH:MM
+                open_str = row[0].strftime("%H:%M")
+                close_str = row[1].strftime("%H:%M")
+                return {"open_time": open_str, "close_time": close_str, "tz_time": row[2]}
+    finally:
+        conn.close()
+        
+def db_update_market_hours(open_time_str: str, close_time_str: str, tz_name: str):
+    """
+    Expects HH:MM 24H strings. Validates basic format and open<close.
+    Also returns updated record.
+    """
+    
+    #This does basic validation
+    try:
+        openHour, openMinute = map(int, open_time_str.split(":"))
+        closeHour, closeMinute = map(int, close_time_str.split(":"))
+        openTime = time(openHour, openMinute)
+        closeTime = time(closeHour, closeMinute)
+    except Exception:
+        raise ValueError("Invalid time format; use HH:MM (24-hours).")
+        
+    if not (0 <= openHour < 24 and 0 <= closeHour < 24 and 0 <= openMinute < 60 and 0 <= closeMinute < 60):
+        raise ValueError("Hours must be between 0-23 and minutes must be between 0-59.")
+        
+    if not (openTime < closeTime):
+        raise ValueError("Open time must be earlier than close.")
+        
+    #This validates the timezone
+    try:
+        tzName = ZoneInfo(tz_name)
+    except Exception:
+        raise ValueError("Invalid timezone name; it must be a valuld IANA time zone...look em up.")
+    
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE market_hours
+                       SET open_time = %s,
+                           close_time = %s,
+                           tz_name = %s,
+                           updated_at = now()
+                    WHERE id = TRUE
+                """, (openTime, closeTime, tz_name))
+        return {"open_time": open_time_str, "close_time": close_time_str, "tz_name": tz_name}
+    finally:
+        conn.close()
+        
+def is_market_open(now_utc: datetime | None = None) -> dict:
+    """
+    This returns dictionary with (is_open, now_local, open_time, close_time, and tz_name
+    """
+    
+    rec = db_get_market_hours()
+    tz = ZoneInfo(rec["tz_name"])
+    if now_utc is None:
+        now_utc = datetime.now(timezone.utc)
+    now_local = now_utc.astimezone(tz)
+    
+    openHour, openMinute = map(int, rec["open_time"].split(":"))
+    closeHour, closeMinute = map(int, rec["close_time"].split(":"))
+    
+    open_dt = now.local.replace(hour=openHour, minute=openMinute, second=0, microsecond=0)
+    close_dt = now.local.replace(hour=closeHour, minute=closeMinute, second=0, microsecond=0)
+    
+    open_flag = (open_dt <= now_local <= close_dt)
+    return {
+        "is_open": open_flag,
+        "now_local": now_local.isoformat(),
+        "open_time": rec["open_time"],
+        "close_time": rec["close_time"],
+        "tz_name": rec["tz_name"]
+    }
+    
 
 app = Flask(__name__)
 
@@ -388,6 +485,7 @@ def cash_withdraw():
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
+            #ADMIN PROTECTED ENDPOINTS
 @app.route("/admin/stocks", methods=["POST"])
 def admin_create_stock():
     user = get_current_user()
@@ -444,6 +542,47 @@ def admin_create_stock():
         }), 201
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
+        
+@app.route("/admin/market-hours", methods=["GET"])
+def admin_get_market_hours():
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Not Authenticated"}), 401
+    role = (user.get("role") or "").strip().lower()
+    if role != "admin":
+        return jsonify({"detail": "Forbidden"}), 403
+    
+    rec = db_get_market_hours()
+    return jsonify(rec), 200
+
+@app.route("/admin/market-hours", methods=["PUT"])
+def admin_update_market_hours():
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Not Authenticated"}), 401
+    role = (user.get("role") or "").strip().lower()
+    if role != "admin":
+        return jsonify({"detail": "Forbidden"}), 403
+        
+    body = request.get_json(force=True) or {}
+    open_time = (body.get("open_time") or "").strip()
+    close_time = (body.get("close_time") or "").strip()
+    tz_name = (body.get("tz_name") or "").strip()
+    
+    if not open_time or not close_time:
+        return jsonify({"detail": "open time and close times are required"}), 400
+        
+    try:
+        updated = db_update_market_hours(open_time, close_time, tz_name)
+        return jsonify(updated), 200
+    except ValueError as ve:
+        return jsonify({"detail": str(ve)}), 400
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+        
+ @app.route("/market/hours", methods=["GET"])
+ def public_get_market_hours():
+     return jsonify(db_get_market_hours()), 200
 
 @app.route("/market/tickers", methods=["GET"])
 def list_tickers():
@@ -506,6 +645,112 @@ def get_ticker(ticker):
         })
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
+
+@app.route("/trade/buy", methods=["POST"])
+def place_order():
+    """
+    POST body: { "ticker": "ACME", "side": "buy", "quantity": 1 }
+    Only 'buy' is implemented for now.
+    Returns: { ticker, price, quantity, total_value, new_cash_balance }
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Not authenticated"}), 401
+
+    body = request.get_json(force=True) or {}
+    ticker = (body.get("ticker") or "").strip().upper()
+    side = (body.get("side") or "").strip().lower()
+    qty_raw = body.get("quantity")
+
+    # Basic validation
+    try:
+        quantity = int(qty_raw)
+    except (TypeError, ValueError):
+        quantity = 0
+
+    if not ticker:
+        return jsonify({"detail": "Ticker is required"}), 400
+    if side != "buy":
+        return jsonify({"detail": "Only 'buy' is supported at this time"}), 400
+    if quantity <= 0:
+        return jsonify({"detail": "Quantity must be a positive integer"}), 400
+
+    try:
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                # 1) Get current price for ticker (must be listed)
+                cur.execute("""
+                    SELECT current_price
+                    FROM stocks
+                    WHERE ticker = %s AND is_listed = TRUE
+                    LIMIT 1;
+                """, (ticker,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"detail": f"Ticker {ticker} not found or not listed"}), 404
+                price = float(row[0])
+                total_value = round(price * quantity, 2)
+
+                # 2) Deduct cash if enough balance (atomic guard)
+                cur.execute("""
+                    UPDATE users
+                       SET cash_balance = cash_balance - %s
+                     WHERE id = %s
+                       AND cash_balance >= %s
+                 RETURNING cash_balance;
+                """, (total_value, user["id"], total_value))
+                row = cur.fetchone()
+                if not row:
+                    # rollback happens automatically on leaving the 'with conn' if exception is raised
+                    return jsonify({"detail": "Insufficient funds"}), 400
+                new_cash_balance = float(row[0])
+
+                # 3) Upsert position (recompute average cost)
+                #    avg_cost' = (old_qty*old_avg + qty*price) / (old_qty + qty)
+                #    Handle first-buy case by COALESCE.
+                cur.execute("""
+                    INSERT INTO user_positions (user_id, ticker, quantity, avg_cost)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (user_id, ticker) DO UPDATE
+                    SET quantity = user_positions.quantity + EXCLUDED.quantity,
+                        avg_cost = ROUND(
+                            (
+                              (user_positions.quantity * user_positions.avg_cost)
+                              + (EXCLUDED.quantity * EXCLUDED.avg_cost)
+                            ) / NULLIF(user_positions.quantity + EXCLUDED.quantity, 0)
+                        , 2),
+                        updated_at = now()
+                    RETURNING quantity, avg_cost;
+                """, (user["id"], ticker, quantity, price))
+                pos_row = cur.fetchone()
+                new_qty = float(pos_row[0]) if pos_row else quantity
+                new_avg = float(pos_row[1]) if pos_row else price
+
+                # 4) Insert transaction record
+                cur.execute("""
+                    INSERT INTO transactions (
+                        user_id, type, ticker, quantity, price, total_value
+                    )
+                    VALUES (%s, 'buy', %s, %s, %s, %s)
+                    RETURNING id;
+                """, (user["id"], ticker, quantity, price, total_value))
+                _tx_id = cur.fetchone()[0]
+
+        # Success response
+        return jsonify({
+            "ticker": ticker,
+            "price": price,
+            "quantity": quantity,
+            "total_value": total_value,
+            "new_cash_balance": new_cash_balance,
+            "position": {"quantity": new_qty, "avg_cost": new_avg}
+        }), 201
+
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+      
+
 
 if __name__ == "__main__":
     # Only used if you run app.py directly; systemd runs gunicorn

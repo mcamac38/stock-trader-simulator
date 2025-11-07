@@ -73,14 +73,18 @@
             <form class="form" action="#" method="post" novalidate>
               <div class="form-row">
                 <label for="openTime">Open Time</label>
-                <input type="time" id="openTime" name="openTime" required />
+                <input type="time" id="open_time" name="open_time" required />
               </div>
               <div class="form-row">
                 <label for="closeTime">Close Time</label>
-                <input type="time" id="closeTime" name="closeTime" required />
+                <input type="time" id="close_time" name="close_time" required />
+              </div>
+			  <div class="form-row">
+                <label for="timeZone">Time Zone</label>
+                <input type="text" id="tz_name" value="America/New_York" required />
               </div>
               <div class="actions">
-                <button type="submit" class="btn btn-primary">Save</button>
+                <button id="saveBtn" type="submit" class="btn btn-primary">Save</button>
                 <a class="btn btn-cancel" href="./index.html">Cancel</a>
               </div>
             </form>
@@ -115,13 +119,86 @@
           <div class="footer-bottom">
             <span>© 2025 Stock Trading Simulator</span>
             <div class="social">
-              <a href="#" aria-label="Twitter">T</a>
-              <a href="#" aria-label="LinkedIn">in</a>
+              <a href="#" aria-label="Twitter">Tw</a>
+              <a href="#" aria-label="LinkedIn">Ln</a>
               <a href="#" aria-label="GitHub">GH</a>
             </div>
           </div>
         </div>
       </footer>
     </div>
+	<script>
+		// Replace this with actual API Gateway Invoke URL
+		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
+	</script>
+	<script type="module">
+	  import { requireAuth, getMarketHours, updateMarketHours } from "../javascript/api.js";
+	  
+	  requireAuth();
+	  
+	  //This section should grab elements that exist in the html
+	  const elOpen = document.getElementById("open_time");
+	  const elClose = document.getElementById("close_time");
+	  const elTz = document.getElementById("tz_name");
+	  const form = document.getElementById("form.form");
+	  const buttonSave = document.getElementById("saveBtn");
+	  const msgSuccess = document.getElementById(".msg.success");
+	  const msgError = document.getElementById(".msg.error");
+	  
+	  function showOk(text) {
+	    if (msgSuccess) { msgSuccess.textContent = text; msgSuccess.style.display = "block"; }
+		if (msgError) msgError.style.display = "none";
+	  }
+	  function showErr(text) {
+	    if (msgError) { msgError.textContent = text; msgError.style.display = "block"; }
+		if (msgSuccess) msgSuccess.style.display = "none";
+	  }
+	  function disableSubmit(disabled) {
+	    if (buttonSave) { buttonSave.disabled = disabled; buttonSave.ariaBusy = String(disabled); }
+	  }
+	  
+	  
+	  //This part needs to load hours on the page
+	  async function init() {
+	    disableSave(true);
+		try {
+		  const r = await getMarketHours();
+		  if (elOpen) elOpen.value = r.open_time || "";
+		  if (elClose) elClose.value = r.close_time || "";
+		  if (elTz) elTz.value = r.tz_name || "America/New_York";
+		}
+		catch (e) {
+		  const detail = e?.detail || e?.body?.detail || "Failed to load market hours.";
+		  showErr(detail);
+		}
+		finally {
+		  disableSave(false);
+		}
+	  }
+	
+	  //This code should catch the submitted form
+	  form?.addEventListener("submit", async (ev) => {
+	    ev.preventDefault(); // prevents full-page POST
+	    disableSave(true);
+	    try {
+	      const payload = {
+		    open_time = elOpen?.value || "",
+		    close_time = elClose?.value || "",
+		    tz_name: (elTz?.value || "").trim() || "America/New_York"
+		  };
+		  const r = await updateMarketHours(payload);
+		  showOK(`Saved: ${r.open_time}-${r.close_time} (${r.tz_name})`);
+		}
+		catch (e) {
+		  const detail = e?.detail || e?.body?.detail || "Update failed";
+		  showErr(detail);
+		}
+		finally {
+		  disableSave(false);
+		}
+    });
+	
+	init();
+	</script>
   </body>
 </html>
