@@ -182,8 +182,8 @@
 	    disableSave(true);
 	    try {
 	      const payload = {
-		    open_time = elOpen?.value || "",
-		    close_time = elClose?.value || "",
+		    open_time: elOpen?.value || "",
+		    close_time: elClose?.value || "",
 		    tz_name: (elTz?.value || "").trim() || "America/New_York"
 		  };
 		  const r = await updateMarketHours(payload);
