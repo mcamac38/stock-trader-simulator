@@ -154,7 +154,10 @@
 		if (msgSuccess) msgSuccess.style.display = "none";
 	  }
 	  function disableSubmit(disabled) {
-	    if (buttonSave) { buttonSave.disabled = disabled; buttonSave.ariaBusy = String(disabled); }
+	    if (buttonSave) { 
+		  buttonSave.disabled = disabled; 
+		  buttonSave.setAttribute("aria-busy", String(disabled)); 
+		  }
 	  }
 	  
 	  
