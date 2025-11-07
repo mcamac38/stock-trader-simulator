@@ -46,7 +46,7 @@ export async function loginUser({ username, password }) {
 
 // Market
 export async function listTickers(){ return http("/market/tickers"); }
-export async function getMarketHours(){ return http("admin/market-hours", {auth:true}); }
+export async function getMarketHours(){ return http("/admin/market-hours", {auth:true}); }
 export async function updateMarketHours({open_time, close_time, tz_name}){ return http("/admin/market-hours", { method:"PUT", auth:true, body:{open_time, close_time, tz_name } }) }
 export async function getPublicMarketHours(){ return http("/market/hours"); }
 export async function getMarketStatus(){ return http("/market/status"); }
