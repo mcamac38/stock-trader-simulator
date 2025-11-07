@@ -140,10 +140,10 @@
 	  const elOpen = document.getElementById("open_time");
 	  const elClose = document.getElementById("close_time");
 	  const elTz = document.getElementById("tz_name");
-	  const form = document.getElementById("form.form");
+	  const form = document.querySelector("form.form");
 	  const buttonSave = document.getElementById("saveBtn");
-	  const msgSuccess = document.getElementById(".msg.success");
-	  const msgError = document.getElementById(".msg.error");
+	  const msgSuccess = document.querySelector(".msg.success");
+	  const msgError = document.querySelector(".msg.error");
 	  
 	  function showOk(text) {
 	    if (msgSuccess) { msgSuccess.textContent = text; msgSuccess.style.display = "block"; }
@@ -153,7 +153,7 @@
 	    if (msgError) { msgError.textContent = text; msgError.style.display = "block"; }
 		if (msgSuccess) msgSuccess.style.display = "none";
 	  }
-	  function disableSubmit(disabled) {
+	  function disableSave(disabled) {
 	    if (buttonSave) { 
 		  buttonSave.disabled = disabled; 
 		  buttonSave.setAttribute("aria-busy", String(disabled)); 
