@@ -130,7 +130,7 @@
         if (msgOK)  msgOK.style.display = "none";
       }
 
-	  aysnc function initSchedulePage() {
+	  async function initSchedulePage() {
 	    try {
 		  const schedule = await getMarketSchedule();
 		  console.log("Market schedule from backend:", schedule);
