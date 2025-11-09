@@ -99,7 +99,7 @@ export async function getMarketSchedule(){
     return http("/admin/market-schedule", { auth:true}); 
 }	
 export async function saveMarketScheduleEntry({close_date, is_closed, open_time, close_time, note }){
-	return http("/admin/market-schedule"), {
+	return http("/admin/market-schedule", {
 		method: "PUT",
 		auth: true,
 		body: {close_date, is_closed, open_time, close_time, note }
