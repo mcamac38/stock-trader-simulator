@@ -1,6 +1,6 @@
 from __future__ import annotations
 import jwt, os
-from datetime import datetime, timezone, time
+from datetime import datetime, timezone, time, date
 import time as time_module
 from zoneinfo import ZoneInfo
 from flask import Flask, request, jsonify
@@ -34,7 +34,7 @@ try:
 except Exception:
     psycopg2 = None
 
-# ---- DB Helpers ----
+# ----------------------------------------- DB HELPERS ---------------------------------------
 def get_db_connection():
     import psycopg2
     conn = psycopg2.connect(
@@ -211,31 +211,152 @@ def db_update_market_hours(open_time_str: str, close_time_str: str, tz_name: str
         return {"open_time": open_time_str, "close_time": close_time_str, "tz_name": tz_name}
     finally:
         conn.close()
+        
+def db_get_market_closure_for_date(d: date):
+    """
+    This will look up the specific date closure in the market schedule closures table.
+    Returns a dict or none if there is no row for that date.
+    
+    Table:
+      market_schedule_closures(
+        close_date DATE PRIMARY KEY,
+        is_closed BOOLEAN,
+        open_time TIME,
+        close_time TIME,
+        note TEXT,
+        updated_at TIMESTAMPTZ
+      )
+    """
+    
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT close_date, is_closed, open_time, close_time, note
+                      FROM market_schedule_closures
+                     WHERE close_date = %s
+                     LIMIT 1
+                """, (d,))
+                row = cur.fetchone()
+                if not row:
+                    return None
+                    
+                close_date, is_closed, open_time, close_time, note = row
+                
+                #Makes sure time is in HH:MM as a string and not am integer
+                open_str = open_time.strftime("%H:%M") if open_time is not None else None
+                close_str = close_time.strftime("%H:%M") if close_time is not None else None
+                
+                return {
+                    "close_date": close.date.isoformat(),
+                    "is_closed": bool(is_closed),
+                    "open_time": open_str,
+                    "close_time": close_str,
+                    "note": note,
+                }
+                
+    finally:
+        conn.close()
+        
+def db_list_market_closures():
+    """
+    Return all closure/override rows from market_schedule_closures,
+    ordered by close_date ascending.
 
+    Schema (your names):
+      market_schedule_closures(
+        close_date date primary key,
+        is_closed  boolean,
+        open_time  time,
+        close_time time,
+        note       text,
+        updated_at timestamptz
+      )
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT close_date, is_closed, open_time, close_time, note
+                      FROM market_schedule_closures
+                  ORDER BY close_date ASC
+                """)
+                rows = cur.fetchall()
+
+        results = []
+        for close_date, is_closed, open_time, close_time, note in rows:
+            open_str = open_time.strftime("%H:%M") if open_time is not None else None
+            close_str = close_time.strftime("%H:%M") if close_time is not None else None
+            results.append({
+                "close_date": close_date.isoformat(),
+                "is_closed": bool(is_closed),
+                "open_time": open_str,
+                "close_time": close_str,
+                "note": note,
+            })
+        return results
+    finally:
+        conn.close()
+        
+# -------------------------------MARKET OPEN AND CLOSURE ENFORCEMENT HELPER------------------------------
+                     
 def is_market_open(now_utc: datetime | None = None) -> dict:
     """
     This returns dictionary with (is_open, now_local, open_time, close_time, and tz_name
     """
 
+    #1) This is used for a normal day (base hours)
     rec = db_get_market_hours()
     tz = ZoneInfo(rec["tz_name"])
+
+    #2) This works to make sure "now" is the local time
     if now_utc is None:
         now_utc = datetime.now(timezone.utc)
     now_local = now_utc.astimezone(tz)
+    local_date = now_local.date()
 
-    openHour, openMinute = map(int, rec["open_time"].split(":"))
-    closeHour, closeMinute = map(int, rec["close_time"].split(":"))
+    #3) This should look for date meant for markey closure
+    override = db_get_market_closure_for_date(local_date)
+
+    #Starts with the base hours (reg day) as the effective hours
+    eff_open = rec["open_time"]
+    eff_close = rec["close_time"]
+
+    #4) If override equals a day to be closed this should hit
+    if override is not None:
+        if override ["is_closed"]:
+            #Closes the market regardless of the time for that day
+            return {
+                "is_open": False,
+                "now_local": now_local.isoformat(),
+                "open_time": eff_open,
+                "close_time": eff_close,
+                "tz_name": rec["tz_name"],
+                "date": local_date.isoformat(),
+                "override": override,
+            }
+            
+    #5)This now replace what is in the comments to still enforce open hours
+       #openHour, openMinute = map(int, rec["open_time"].split(":"))
+       #closeHour, closeMinute = map(int, rec["close_time"].split(":"))
+    openHour, openMinute = map(int, eff_open.split(":"))
+    closeHour, closeMinute = map(int, eff_close.split(":"))
 
     open_dt = now_local.replace(hour=openHour, minute=openMinute, second=0, microsecond=0)
     close_dt = now_local.replace(hour=closeHour, minute=closeMinute, second=0, microsecond=0)
 
     open_flag = (open_dt <= now_local <= close_dt)
+    
     return {
         "is_open": open_flag,
         "now_local": now_local.isoformat(),
-        "open_time": rec["open_time"],
-        "close_time": rec["close_time"],
-        "tz_name": rec["tz_name"]
+        "open_time": eff_open,
+        "close_time": eff_close,
+        "tz_name": rec["tz_name"],
+        "data": local_date.isoformat(),
+        "override": override,
     }
 
 def require_market_open():
@@ -586,10 +707,81 @@ def admin_update_market_hours():
         return jsonify({"detail": str(ve)}), 400
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
+        
+ @app.route("/admin/market-schedule", methods=["GET"])
+def admin_list_market_schedule():
+    """
+    Admin-only: return all date-specific closures/overrides from market_schedule_closures.
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Not Authenticated"}), 401
+
+    role = (user.get("role") or "").strip().lower()
+    if role != "admin":
+        return jsonify({"detail": "Forbidden"}), 403
+
+    try:
+        rows = db_list_market_closures()
+        return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500          
+        
+@app.route("/admin/market-schedule", methods=["PUT"])
+def admin_upsert_market_schedule():
+    """
+    Admin-only: create or update a single closure/override date.
+    Expects JSON like:
+      {
+        "close_date": "2025-12-25",  # YYYY-MM-DD
+        "is_closed": true,           # full-day closed, OR
+        "open_time": "09:30",        # optional HH:MM
+        "close_time": "13:00",       # optional HH:MM
+        "note": "Christmas (half day)"
+      }
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Not Authenticated"}), 401
+
+    role = (user.get("role") or "").strip().lower()
+    if role != "admin":
+        return jsonify({"detail": "Forbidden"}), 403
+
+    body = request.get_json(force=True) or {}
+    close_date = (body.get("close_date") or "").strip()
+    if not close_date:
+        return jsonify({"detail": "close_date (YYYY-MM-DD) is required"}), 400
+
+    # Default is_closed to False if not provided
+    is_closed = bool(body.get("is_closed", False))
+    open_time = body.get("open_time")
+    close_time = body.get("close_time")
+    note = body.get("note")
+
+    try:
+        rec = db_upsert_market_closure(
+            close_date_str=close_date,
+            is_closed=is_closed,
+            open_time_str=open_time,
+            close_time_str=close_time,
+            note=note,
+        )
+        return jsonify(rec), 200
+    except ValueError as ve:
+        # validation error from db_upsert_market_closure
+        return jsonify({"detail": str(ve)}), 400
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500        
 
 @app.route("/market/hours", methods=["GET"])
 def public_get_market_hours():
     return jsonify(db_get_market_hours()), 200
+    
+@app.route("/market/status", methods=["GET"])
+def market_status():
+    # Uses your updated is_market_open() which now checks closures/half-days
+    return jsonify(is_market_open()), 200
 
 @app.route("/market/tickers", methods=["GET"])
 def list_tickers():
@@ -763,8 +955,6 @@ def place_order():
 
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
-
-
 
 if __name__ == "__main__":
     # Only used if you run app.py directly; systemd runs gunicorn

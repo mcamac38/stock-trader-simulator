@@ -46,8 +46,6 @@ export async function loginUser({ username, password }) {
 
 // Market
 export async function listTickers(){ return http("/market/tickers"); }
-export async function getMarketHours(){ return http("/admin/market-hours", {auth:true}); }
-export async function updateMarketHours({open_time, close_time, tz_name}){ return http("/admin/market-hours", { method:"PUT", auth:true, body:{open_time, close_time, tz_name } }) }
 export async function getPublicMarketHours(){ return http("/market/hours"); }
 export async function getMarketStatus(){ return http("/market/status"); }
 
@@ -88,6 +86,24 @@ export async function renderCash(spanId="cash-amount"){
 export async function adminCreateStock(payload) {
 		//expects: { ticker, company_name, current_price, volume?, sector?, is_listed? }
 		return http("/admin/stocks", {method: "POST", auth: true, body: payload });
+}
+
+// Admin: Market Hours & Schedule
+export async function getMarketHours(){ 
+    return http("/admin/market-hours", {auth:true}); 
+}
+export async function updateMarketHours({open_time, close_time, tz_name}){ 
+    return http("/admin/market-hours", { method:"PUT", auth:true, body:{open_time, close_time, tz_name } }); 
+}
+export async function getMarketSchedule(){
+    return http("/admin/market-schedule", { auth:true}); 
+}	
+export async function saveMarketScheduleEntry({close_date, is_closed, open_time, close_time, note }){
+	return http("/admin/market-schedule"), {
+		method: "PUT",
+		auth: true,
+		body: {close_date, is_closed, open_time, close_time, note }
+	});
 }
 
 export { token, setToken, clearToken };

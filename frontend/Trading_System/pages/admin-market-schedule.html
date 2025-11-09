@@ -109,5 +109,42 @@
         <small>© 2025 Stock Trading Simulator | Arizona State University</small>
       </footer>
     </div>
+	<script>
+		// Replace this with actual API Gateway Invoke URL
+		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
+	</script>
+	<script type="module">
+	  import { requireAuth, getMarketSchedule } from "../javascript/api.js";
+	  
+	  requireAuth();
+	  
+      const msgOK  = document.querySelector(".msg.success");
+      const msgErr = document.querySelector(".msg.error");
+	  
+      function showOK(text) {
+        if (msgOK)  { msgOK.textContent = text; msgOK.style.display = "block"; }
+        if (msgErr) msgErr.style.display = "none";
+      }
+      function showErr(text) {
+        if (msgErr) { msgErr.textContent = text; msgErr.style.display = "block"; }
+        if (msgOK)  msgOK.style.display = "none";
+      }
+
+	  aysnc function initSchedulePage() {
+	    try {
+		  const schedule = await getMarketSchedule();
+		  console.log("Market schedule from backend:", schedule);
+		  
+		  showOK("Schedule Loaded.");
+		}
+		catch (e){
+		const detail = e?.detail || e?.body?.detail || "Failed to load schedule.";
+          console.error("Error loading market schedule:", e);
+          showErr(detail);
+        }
+	  }
+	  
+	  initSchedulePage();
+	</script>
   </body>
 </html>
