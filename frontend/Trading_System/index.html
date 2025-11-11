@@ -206,8 +206,8 @@
 		const state = status.is_open ? "Open Now" : "Close Now";
 		
 		el.textContent = `Open: ${open} | Close: ${close}${tz} - ${state}`;
-	  });
-	  catch(() => {
+	  })
+	  .catch(() => {
 	    const el = document.getElementById("market-hours");
 		if (el) el.textContent = "Market hours unavailable";
 	  });
