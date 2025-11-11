@@ -136,6 +136,34 @@
 			    <a class="btn btn-cancel" href="/index.html">Cancel</a>
 			  </div>
 		    </form>
+			
+            <hr class="divider" />
+
+            <h3 class="section-title">Existing Closures & Special Days</h3>
+            <p class="muted">
+              These dates override the normal market hours. Closed days ignore all trades; half days or special
+              hours use the times shown here.
+            </p>
+
+            <div class="table-wrapper">
+              <table class="table" aria-describedby="schedule-help">
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Closed All Day?</th>
+                    <th scope="col">Open</th>
+                    <th scope="col">Close</th>
+                    <th scope="col">Note</th>
+                  </tr>
+                </thead>
+                <tbody id="schedule-body">
+                  <!-- JS will inject rows here -->
+                </tbody>
+              </table>
+              <p id="schedule-help" class="muted" style="margin-top:0.5rem;">
+                If no rows appear, there are currently no special closures configured.
+              </p>
+            </div>			
           </section>
         </div>
       </main>
