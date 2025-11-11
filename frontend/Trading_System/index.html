@@ -203,7 +203,7 @@
 		const open = status.open_time || "-";
 		const close = status.close_time || "-";
 		const tz = status.tz_name ? ` (${status.tz_name})` : "";
-		const state = status.is_open ? "Open Now" : "Close Now";
+		const state = status.is_open ? "Open Now" : "Closed Now";
 		
 		el.textContent = `Open: ${open} | Close: ${close}${tz} - ${state}`;
 	  })
