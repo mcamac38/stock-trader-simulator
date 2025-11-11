@@ -106,7 +106,7 @@
             </div>
 
             <h3 class="section-title">Current Market Hours</h3>
-            <p class="muted">Open: — | Close: —</p>
+            <p class="muted" id="market-hours">Open: — | Close: —</p>
           </section>
         </div>
       </main>
@@ -151,7 +151,7 @@
       </footer>
     </div>
 	<script type="module">
-	  import { token, listTickers } from "../javascript/api.js";
+	  import { token, listTickers, getMarketStatus } from "../javascript/api.js";
 	  
 	  // List the pages that require auth
 	  const protectedPaths = new Set([
@@ -182,7 +182,8 @@
 	  
 	  listTickers().then(stocks => {
 	    const tbody = document.querySelector("tbody");
-		if (!body) return;
+		if (!tbody) return;
+		
 		tbody.innerHTML = "";
 		stocks.forEach(s => {
 		  const tr = document.createElement("tr");
@@ -193,6 +194,22 @@
 			<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>`;
 		  tbody.appendChild(tr);
 		});
+	  });
+	  
+	  getMarketStatus().then(status => {
+	    const el = document.getElementById("market-hours");
+		if (!el) return;
+		
+		const open = status.open_time || "-";
+		const close = status.close_time || "-";
+		const tz = status.tz_name ? ` (${status.tz_name})` : "";
+		const state = status.is_open ? "Open Now" : "Close Now";
+		
+		el.textContent = `Open: ${open} | Close: ${close}${tz} - ${state}`;
+	  });
+	  catch(() => {
+	    const el = document.getElementById("market-hours");
+		if (el) el.textContent = "Market hours unavailable";
 	  });
 	</script>
   </body>
