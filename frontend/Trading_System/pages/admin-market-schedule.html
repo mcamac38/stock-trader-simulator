@@ -214,9 +214,41 @@
 	  
 	  //This loads the current Schedule
 	  async function loadSchedule() {
-	    try {
+	    const tbody = document.getElementById("schedule-body");
+		if (tbody) {
+		  tbody.innerHTML = ""; //should clear olds rows
+		}
+				
+		try {
 		  const schedule = await getMarketSchedule();
 		  console.log("Market schedule from backend:", schedule);
+		  
+		  if(tbody && Array.isArray(schedule) && schedule.length > 0) {
+		    for (const item of schedule) {
+			  const tr = document.createElement("tr");
+			  
+			  const tdDate   = document.createElement("td");
+			  const tdClosed = document.createElement("td");
+			  const tdOpen   = document.createElement("td");
+			  const tdClose  = document.createElement("td");
+			  const tdNote   = document.createElement("td");
+			  
+			  tdDate.textContent = item.close_date || "";
+			  tdClosed.textContent = item.is_closed || "";
+			  tdOpen.textContent = item.open_time || "";
+			  tdClose.textContent = item.close_time || "";
+			  tdNote.textContent = item.note || "";
+			  
+			  tr.appendChild(tdDate);
+			  tr.appendChild(tdClosed);
+			  tr.appendChild(tdOpen);
+			  tr.appendChild(tdClose);
+			  tr.appendChild(tdNote);
+			  
+			  tbody.appendChild(tr);
+			}
+		  }
+		  
 		  showOK("Schedule Loaded.");
 		}
 		catch (e){
