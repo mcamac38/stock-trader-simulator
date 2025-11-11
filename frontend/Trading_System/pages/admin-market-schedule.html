@@ -149,12 +149,20 @@
 		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
 	</script>
 	<script type="module">
-	  import { requireAuth, getMarketSchedule } from "../javascript/api.js";
+	  import { requireAuth, getMarketSchedule, saveMarketSchedule } from "../javascript/api.js";
 	  
 	  requireAuth();
 	  
       const msgOK  = document.querySelector(".msg.success");
       const msgErr = document.querySelector(".msg.error");
+	  const form    = document.querySelector("form.form");
+	  
+      const elDate   = document.getElementById("close_date");
+      const elClosed = document.getElementById("is_closed");
+      const elOpen   = document.getElementById("open_time");
+      const elClose  = document.getElementById("close_time");
+      const elNote   = document.getElementById("note");
+      const rowSpecial = document.getElementById("special-hours-row");	  
 	  
       function showOK(text) {
         if (msgOK)  { msgOK.textContent = text; msgOK.style.display = "block"; }
@@ -165,11 +173,22 @@
         if (msgOK)  msgOK.style.display = "none";
       }
 
-	  async function initSchedulePage() {
+
+	  //This will disable special-hours if Closed All Day is selected
+      function updateSpecialHoursState() {
+		const closed = !!(elClosed && elClosed.checked);
+		if (elOpen) elOpen.disabled = closed;
+		if (elClose) elClose.disabled = closed;
+		if (rowSpecial) {
+			rowSpecial.style.opacity = closed ? "0.6" : "1.0";
+		}
+	  }
+	  
+	  //This loads the current Schedule
+	  async function loadSchedule() {
 	    try {
 		  const schedule = await getMarketSchedule();
 		  console.log("Market schedule from backend:", schedule);
-		  
 		  showOK("Schedule Loaded.");
 		}
 		catch (e){
@@ -179,7 +198,51 @@
         }
 	  }
 	  
-	  initSchedulePage();
+	  //The submit handler 
+	  form?.addEventListener("submit", async (ev) => {
+	    ev.preventDefault();
+		
+		const dateValue = elDate?.value;
+		if (!dateValue){
+		  showErr("Please set a closure date");
+		  return;
+		}
+		
+		const isClosed = !!(elClosed && elClosed.checked);
+		
+		//Only sends times when not closed all day
+		const openValue = !isClosed && elOpen ? elOpen.value : "";
+		const closeValue = !isClosed && elClose ? elClose.value : "";
+		const noteValue = elNote ? elNote.value : "";
+		
+		try {
+		  const rec = await saveMarketSchedule({
+		    close_date: dateValue,
+			is_closed: isClosed,
+			open_time: openValue || null,
+			close_time: closeValue || null,
+			note: noteValue || null,
+		});
+		console.log("Saved closure:", rec);
+		showOK(`Saved schedule for ${rec.close_date}`);
+		
+		// Reset form lightly
+        if (elDate)  elDate.value = "";
+        if (elNote)  elNote.value = "";
+        if (elClosed) elClosed.checked = true;
+        if (elOpen)  elOpen.value = "";
+        if (elClose) elClose.value = "";
+        updateSpecialHoursState();
+		
+        await loadSchedule();
+      } catch (e) {
+        const detail = e?.detail || e?.body?.detail || "Failed to save schedule.";
+        console.error("Error saving market schedule:", e);
+        showErr(detail);
+      }
+     });		
+		
+	 loadSchedule();
 	</script>
   </body>
 </html>
