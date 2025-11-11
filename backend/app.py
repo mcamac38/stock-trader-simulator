@@ -355,7 +355,7 @@ def is_market_open(now_utc: datetime | None = None) -> dict:
         "open_time": eff_open,
         "close_time": eff_close,
         "tz_name": rec["tz_name"],
-        "data": local_date.isoformat(),
+        "date": local_date.isoformat(),
         "override": override,
     }
 
@@ -781,7 +781,28 @@ def public_get_market_hours():
 @app.route("/market/status", methods=["GET"])
 def market_status():
     # Uses your updated is_market_open() which now checks closures/half-days
-    return jsonify(is_market_open()), 200
+    try:
+        return jsonify(is_market_open()), 200
+    except Exception as e:
+        # Fallback to static hours so UI doesn't break
+        hours = db_get_market_hours()
+        tz_name = hours.get("tz_name", "America/New_York")
+        try:
+            now_local = datetime.now(ZoneInfo(tzname)).isoformat()
+        except Exception:
+            now_local = datetime.now(timezone.utc).isoformat()
+        safe = {
+            "is_open": False,
+            "now_local": now_local,
+            "open_time": hours.get("open_time"),
+            "close_time": hours.get("close_time"),
+            "tz_name": hours.get("tz_name"),
+            "date": date.today().isoformat(),
+            "override": None,
+            "detail": str(e),
+        }
+        # Return 200 so frontend renders; keep detail for troubleshooting
+        return jsonify(safe), 200
 
 @app.route("/market/tickers", methods=["GET"])
 def list_tickers():
