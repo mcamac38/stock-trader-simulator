@@ -149,7 +149,7 @@
 		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
 	</script>
 	<script type="module">
-	  import { requireAuth, getMarketSchedule, saveMarketSchedule } from "../javascript/api.js";
+	  import { requireAuth, getMarketSchedule, saveMarketScheduleEntry } from "../javascript/api.js";
 	  
 	  requireAuth();
 	  
@@ -216,7 +216,7 @@
 		const noteValue = elNote ? elNote.value : "";
 		
 		try {
-		  const rec = await saveMarketSchedule({
+		  const rec = await saveMarketScheduleEntry({
 		    close_date: dateValue,
 			is_closed: isClosed,
 			open_time: openValue || null,
