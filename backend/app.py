@@ -1,12 +1,13 @@
 from __future__ import annotations
 import jwt, os
-from datetime import datetime, timezone, time, date
+from datetime import datetime, timezone, time, date, timedelta
 import time as time_module
 from zoneinfo import ZoneInfo
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import socket
+import random
 
 #this is a secure way to securely transmit info as JSON
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
@@ -364,6 +365,84 @@ def require_market_open():
     if not status["is_open"]:
         #This pops up in the frontend if the market is closed.
         raise PermissionError({"detail": "Market is closed, go home Rodger!", "market": status})
+    
+    
+# ----------------------------------------- STOCK PRICE CHANGE HELPERS (This may change)---------------------------------------    
+# --- Price step config (from Kayla's idea) ---
+MIN_PRICE = 1.00
+STEP_MIN = 0.05        # 5%
+STEP_MAX = 0.08        # 8%
+INTERVAL_MINUTES = 15  # how often prices are allowed to change
+
+def _rand_step_with_none():
+    """
+    Should return a multiplier for the price: price + none, price + percentPrice, or price - percentPrice,
+    where percentPrice is uniform between STEP_MIN and STEP_MAX.
+    """
+    
+    roll = random.random()
+    if roll < (1/3):
+        return 1.0
+    elif roll < (2/3):
+        pct = random.uniform(STEP_MIN, STEP_MAX)
+        return 1.0 + pct
+    else:
+        pct = random.uniform(STEP_MIN, STEP_MAX)
+        return max(1.0 - pct, 0.0)
+        
+def ticker_due_prices():
+    """
+    For each stock where at least INTERVAL_MINUTES have passed since last_price_update,
+    apply at most one step (up/down/none), enforce a price floor, and stamp last_price_update.
+    Concurrency-safe via FOR UPDATE SKIP LOCKED.
+    """
+    now = datetime.now(timezone.utc)
+    threshold = now - timedelta(minutes=INTERVAL_MINUTES)    
+    
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                # 1) Read candidates that LOOK due using a Python-computed threshold
+                cur.execute("""
+                    SELECT ticker, current_price, last_price_update
+                    FROM stocks
+                    WHERE is_listed = TRUE
+                      AND (last_price_update IS NULL
+                           OR last_price_update <= %s)
+                """, (cutoff,))
+                rows = cur.fetchall()
+                
+                for ticker, current_price, last_ts in rows:
+                    price = float(current_price)
+
+                    # choose none / up / down (≈1/3 each)
+                    r = random.random()
+                    if r < (1/3):
+                        new_price = round(max(MIN_PRICE, price), 2)  # none
+                    else:
+                        pct = random.uniform(STEP_MIN, STEP_MAX)
+                        new_price = round(max(MIN_PRICE, price * (1 + pct if r < (2/3) else 1 - pct)), 2)
+
+                    # 2) Update only if STILL due (prevents double-ticks across workers)
+                    cur.execute("""
+                        UPDATE stocks
+                        SET
+                          previous_price    = CASE WHEN current_price <> %s THEN current_price ELSE previous_price END,
+                          current_price     = %s,
+                          last_price_update = %s
+                        WHERE ticker = %s
+                          AND (last_price_update IS NULL OR last_price_update <= %s)
+                    """, (new_price, new_price, now, ticker, cutoff))
+
+                    if cur.rowcount:  # 1 if we won the race, 0 if someone else updated first
+                        if new_price != price:
+                            changed += 1
+                return changed
+    finally:
+        conn.close()
+# ----------------------------------------- END STOCK PRICE CHANGE HELPERS ---------------------------------------
+
 
 app = Flask(__name__)
 
@@ -507,7 +586,7 @@ def get_current_user():
 #            return None  # insufficient funds
 #        return float(row[0])
 
-# ---- Auth endpoints ----
+# ------------------------ AUTH ENDPOINTS ------------------------
 @app.route("/auth/register", methods=["POST"])
 def register():
     body = request.get_json(force=True) or {}
@@ -543,7 +622,7 @@ def login():
     token = make_token(username)
     return jsonify({"access_token": token, "token_type": "bearer"})
 
-# ---- Protected endpoints ----
+# ------------------------ PROTECTED ENDPOINTS ------------------------
 @app.route("/account", methods=["GET"])
 def account():
     user = get_current_user()
@@ -614,6 +693,7 @@ def cash_withdraw():
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
+# ------------------------- ADMIN ENDPOINTS -------------------------
 @app.route("/admin/stocks", methods=["POST"])
 def admin_create_stock():
     user = get_current_user()
@@ -774,6 +854,8 @@ def admin_upsert_market_schedule():
     except Exception as e:
         return jsonify({"detail": str(e)}), 500        
 
+# -------------------------- OPERATIONAL ENDPOINTS -------------------------
+
 @app.route("/market/hours", methods=["GET"])
 def public_get_market_hours():
     return jsonify(db_get_market_hours()), 200
@@ -812,11 +894,17 @@ def list_tickers():
     { "ticker":"ACME", "company_name":"Acme Corp", "current_price": 99.99 }
     """
     try:
+        #New: bring any symbols up-to-date before reading/this might be changed if Kayla can get orginal code fully operational
+        ticker_due_prices()
+        
+    except Exception as e:
+        print("ticker due prices error", e)
+
         conn = get_db_connection()
         with conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT ticker, company_name, current_price
+                    SELECT ticker, company_name, current_price, volume
                     FROM stocks
                     WHERE is_listed = TRUE
                     ORDER BY ticker ASC
