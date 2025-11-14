@@ -286,7 +286,23 @@
 
 		if (!rawTicker) return showError("Enter a ticker symbol (e.g., ACME).");
 		if (!rawQty || isNaN(qty) || qty <= 0) return showError("Enter a valid quantity greater than 0.");
-
+			
+     	//This is the confirmation dialog and window before placing an order
+	    const priceText = priceEl?.textContent || "-";
+		const totalText = totalEl?.textContent || "-";
+		
+		const confirmMsg = 
+		  `Are you sure you want to sell?\n\n` + 
+		  `${qty] shares of ${rawTicker} @ $${priceText}\n` + 
+		  `Total cost: $${totalText}\n\n` + 
+		  `Click Proceed to continue or Cancel to cancel.`;
+		  
+		const Proceed = window.confirm(confirmMsg);
+		if (!Proceed) {
+		//User canceled so it won't do anything or talk to the backend
+		  return;
+		}
+		
 		const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
 		if (submitBtn) submitBtn.disabled = true;
 
