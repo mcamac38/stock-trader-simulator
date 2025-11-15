@@ -61,7 +61,7 @@ export async function placeOrder({ ticker, side, quantity }){
 export async function sellOrder({ticker, side, quantity }){
   return http("/trade/sell", {method:"POST", auth: true, body:{ticker, side, quantity: Number(quantity) }});
 }
-export async function getHoldings(){ return http("/portfolio/holdings", { auth:true }); }
+export async function getPortfolio(){ return http("/portfolio", { auth:true }); }
 export async function getTransactions(){ return http("/portfolio/transactions", { auth:true }); }
 
 // Guards/helpers
