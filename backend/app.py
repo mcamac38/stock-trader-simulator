@@ -301,6 +301,49 @@ def db_list_market_closures():
     finally:
         conn.close()
         
+
+        
+def db_get_user_holdings(user_id: int):
+    """
+    This will pull the user's current stock holdings
+    
+    Each item looks like this:
+      {"ticker": "AAPL",
+      "quantity": 10,
+      "current_price": 123.45,
+      "total_value": 1234.50
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT p.ticker, p.quantity, COALESCE(s.current_price, 0) AS current_price, p.quantity * COALESCE(s.current_price, 0) AS total_value
+                      FROM user_positions AS p
+                      JOIN stocks AS s
+                        ON s.ticker = p.ticker
+                     WHERE p.user_id = %s AND p.quantity > 0
+                    ORDER BY p.ticker ASC;
+                    """,
+                    (user_id,),
+                )
+                rows = cur.fetchall()
+                
+        holdings = []
+        for ticker, qty, price, total in rows:
+            holdings.append(
+                {
+                    "ticker": ticker,
+                    "quantity": float(qty),
+                    "current_price": float(price),
+                    "total_value": float(total),
+                }
+            )
+        return holdings
+    
+    finally:
+        conn.close()
+        
 # -------------------------------MARKET OPEN AND CLOSURE ENFORCEMENT HELPER------------------------------
                      
 def is_market_open(now_utc: datetime | None = None) -> dict:
@@ -586,7 +629,7 @@ def get_current_user():
 #            return None  # insufficient funds
 #        return float(row[0])
 
-# ------------------------ AUTH ENDPOINTS ------------------------
+# --------------------------------------- AUTH ENDPOINTS ---------------------------------------
 @app.route("/auth/register", methods=["POST"])
 def register():
     body = request.get_json(force=True) or {}
@@ -622,7 +665,7 @@ def login():
     token = make_token(username)
     return jsonify({"access_token": token, "token_type": "bearer"})
 
-# ------------------------ PROTECTED ENDPOINTS ------------------------
+# --------------------------------------- PROTECTED ENDPOINTS ---------------------------------------
 @app.route("/account", methods=["GET"])
 def account():
     user = get_current_user()
@@ -692,8 +735,285 @@ def cash_withdraw():
         return jsonify({"detail": str(ve)}), 400
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
+      
+@app.route("/trade/buy", methods=["POST"])
+def place_order():
+    """
+    POST body: { "ticker": "ACME", "side": "buy", "quantity": 1 }
+    Only 'buy' is implemented for now.
+    Returns: { ticker, price, quantity, total_value, new_cash_balance }
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Not authenticated"}), 401
 
-# ------------------------- ADMIN ENDPOINTS -------------------------
+    body = request.get_json(force=True) or {}
+    ticker = (body.get("ticker") or "").strip().upper()
+    side = (body.get("side") or "").strip().lower()
+    qty_raw = body.get("quantity")
+
+    # Basic validation
+    try:
+        quantity = int(qty_raw)
+    except (TypeError, ValueError):
+        quantity = 0
+
+    if not ticker:
+        return jsonify({"detail": "Ticker is required"}), 400
+    if side != "buy":
+        return jsonify({"detail": "Only 'buy' is supported at this time"}), 400
+    if quantity <= 0:
+        return jsonify({"detail": "Quantity must be a positive integer"}), 400
+
+    #This is what will enforce market hours on the buy page...you can also use it on the sell page
+    try:
+        require_market_open()
+    except PermissionError as pe:
+        payload = pe.args[0] if pe.args else {"detail": "Markey is closed. Go homer Rodger!"}
+        return jsonify(payload), 403
+
+    try:
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                # 1) Get current price for ticker (must be listed)
+                cur.execute("""
+                    SELECT current_price
+                    FROM stocks
+                    WHERE ticker = %s AND is_listed = TRUE
+                    LIMIT 1;
+                """, (ticker,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"detail": f"Ticker {ticker} not found or not listed"}), 404
+                price = float(row[0])
+                total_value = round(price * quantity, 2)
+
+                # 2) Deduct cash if enough balance (atomic guard)
+                cur.execute("""
+                    UPDATE users
+                       SET cash_balance = cash_balance - %s
+                     WHERE id = %s
+                       AND cash_balance >= %s
+                 RETURNING cash_balance;
+                """, (total_value, user["id"], total_value))
+                row = cur.fetchone()
+                if not row:
+                    # rollback happens automatically on leaving the 'with conn' if exception is raised
+                    return jsonify({"detail": "Insufficient funds"}), 400
+                new_cash_balance = float(row[0])
+
+                # 3) Upsert position (recompute average cost)
+                #    avg_cost' = (old_qty*old_avg + qty*price) / (old_qty + qty)
+                #    Handle first-buy case by COALESCE.
+                cur.execute("""
+                    INSERT INTO user_positions (user_id, ticker, quantity, avg_cost)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (user_id, ticker) DO UPDATE
+                    SET quantity = user_positions.quantity + EXCLUDED.quantity,
+                        avg_cost = ROUND(
+                            (
+                              (user_positions.quantity * user_positions.avg_cost)
+                              + (EXCLUDED.quantity * EXCLUDED.avg_cost)
+                            ) / NULLIF(user_positions.quantity + EXCLUDED.quantity, 0)
+                        , 2),
+                        updated_at = now()
+                    RETURNING quantity, avg_cost;
+                """, (user["id"], ticker, quantity, price))
+                pos_row = cur.fetchone()
+                new_qty = float(pos_row[0]) if pos_row else quantity
+                new_avg = float(pos_row[1]) if pos_row else price
+
+                # 4) Insert transaction record
+                cur.execute("""
+                    INSERT INTO transactions (
+                        user_id, type, ticker, quantity, price, total_value
+                    )
+                    VALUES (%s, 'buy', %s, %s, %s, %s)
+                    RETURNING id;
+                """, (user["id"], ticker, quantity, price, total_value))
+                _tx_id = cur.fetchone()[0]
+
+        # Success response
+        return jsonify({
+            "ticker": ticker,
+            "price": price,
+            "quantity": quantity,
+            "total_value": total_value,
+            "new_cash_balance": new_cash_balance,
+            "position": {"quantity": new_qty, "avg_cost": new_avg}
+        }), 201
+
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+        
+@app.route("/trade/sell", methods=["POST"])
+def trade_sell():
+    """
+    POST body: { "ticker": "ACME", "side": "sell", "quantity": 1 }
+    Credits cash, reduces user_positions, logs a 'sell' transaction.
+    Returns: { ticker, price, quantity, total_value, new_cash_balance, position }
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Not authenticated"}), 401
+
+    body = request.get_json(force=True) or {}
+    ticker = (body.get("ticker") or "").strip().upper()
+    qtyraw = body.get("quantity")
+
+    # Basic validation (quantity is integer shares, > 0)
+    try:
+        quantity = int(qtyraw)
+    except (TypeError, ValueError):
+        quantity = 0
+
+    if not ticker:
+        return jsonify({"detail": "Ticker is required"}), 400
+    if quantity <= 0:
+        return jsonify({"detail": "Quantity must be a positive integer"}), 400
+
+    try:
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                # 1) Get current price for ticker (must be listed)
+                cur.execute("""
+                    SELECT current_price
+                      FROM stocks
+                     WHERE ticker = %s AND is_listed = TRUE
+                     LIMIT 1;
+                """, (ticker,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"detail": f"Ticker {ticker} not found or not listed"}), 404
+                price = float(row[0])
+                total_value = round(price * quantity, 2)
+
+                # 2) Lock the user's position and verify shares
+                cur.execute("""
+                    SELECT quantity, avg_cost
+                      FROM user_positions
+                     WHERE user_id = %s AND ticker = %s
+                     FOR UPDATE;
+                """, (user["id"], ticker))
+                pos = cur.fetchone()
+                if not pos:
+                    return jsonify({"detail": "No position to sell"}), 400
+
+                cur_qty, cur_avg = float(pos[0]), float(pos[1])
+                if cur_qty < quantity:
+                    return jsonify({"detail": "Insufficient shares"}), 400
+
+                # 3) Reduce position (avg_cost unchanged); delete if zero
+                cur.execute("""
+                    UPDATE user_positions
+                       SET quantity = quantity - %s,
+                           updated_at = now()
+                     WHERE user_id = %s AND ticker = %s
+                 RETURNING quantity, avg_cost;
+                """, (quantity, user["id"], ticker))
+                new_qty, new_avg = map(float, cur.fetchone())
+
+                if new_qty == 0:
+                    cur.execute("""
+                        DELETE FROM user_positions
+                         WHERE user_id = %s AND ticker = %s AND quantity = 0;
+                    """, (user["id"], ticker))
+
+                # 4) Credit cash
+                cur.execute("""
+                    UPDATE users
+                       SET cash_balance = cash_balance + %s
+                     WHERE id = %s
+                 RETURNING cash_balance;
+                """, (total_value, user["id"]))
+                new_cash_balance = float(cur.fetchone()[0])
+
+                # 5) Insert transaction record
+                cur.execute("""
+                    INSERT INTO transactions (user_id, type, ticker, quantity, price, total_value)
+                    VALUES (%s, 'sell', %s, %s, %s, %s)
+                    RETURNING id;
+                """, (user["id"], ticker, quantity, price, total_value))
+                _tx_id = cur.fetchone()[0]
+
+        # Success response
+        return jsonify({
+            "ticker": ticker,
+            "price": price,
+            "quantity": quantity,
+            "total_value": total_value,
+            "new_cash_balance": new_cash_balance,
+            "position": {"quantity": new_qty, "avg_cost": new_avg}
+        }), 201
+
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+
+
+@app.route("/portfolio", methods=["GET"])
+def get_portfolio():
+    """
+    This will return the current user's portfolio information containing:
+    
+    {
+      "cash_balance": 10000.00
+      "portfolio_value": 2500.00
+      "total_equity": 12500.00
+      "holdings": [ticker: AAPL, quantity: 10, current_price: 120.50, total_value: 1205.00]
+    """
+    
+    
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Not Authenticated"}), 401
+    
+    try:
+        conn= get_db_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT cash_balance
+                          FROM users
+                         WHERE id = %s
+                         LIMIT 1;
+                        """,
+                        (user["id"],),
+                    )
+                    row = cur.fetchone()
+                    cash_balance = (float(row[0] if row[0] is not None else 0.00)
+        finally:
+            conn.close()
+
+        # use the holding helper to get holdings
+        holdings = db_get_user_holdings(user["id"])
+        
+        # computes the portfolio totals
+        portfolio_value = sum(h["total_value"] for h in holdings)
+        total_equity = cash_balance + portfolio_value
+        
+        return jsonify(
+            {
+                "cash_balance": cash_balance,
+                "portfolio_value": portfolio_value,
+                "total_equity": total_equity,
+                "holdings": holdings,
+            }
+        )
+    
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+        
+@app.route("/portfolio/transactions", methods=["GET"])
+def user_transactions():
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Not Authenticated"}), 401
+
+# ---------------------------------------- ADMIN ENDPOINTS ----------------------------------------
 @app.route("/admin/stocks", methods=["POST"])
 def admin_create_stock():
     user = get_current_user()
@@ -854,7 +1174,7 @@ def admin_upsert_market_schedule():
     except Exception as e:
         return jsonify({"detail": str(e)}), 500        
 
-# -------------------------- OPERATIONAL ENDPOINTS -------------------------
+# ----------------------------------------- OPERATIONAL ENDPOINTS ----------------------------------------
 
 @app.route("/market/hours", methods=["GET"])
 def public_get_market_hours():
@@ -898,7 +1218,7 @@ def list_tickers():
         ticker_due_prices()
         
     except Exception as e:
-        print("ticker due prices error", e)
+        print("ticker due prices error:", e)
 
         conn = get_db_connection()
         with conn:
@@ -954,116 +1274,6 @@ def get_ticker(ticker):
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
-@app.route("/trade/buy", methods=["POST"])
-def place_order():
-    """
-    POST body: { "ticker": "ACME", "side": "buy", "quantity": 1 }
-    Only 'buy' is implemented for now.
-    Returns: { ticker, price, quantity, total_value, new_cash_balance }
-    """
-    user = get_current_user()
-    if not user:
-        return jsonify({"detail": "Not authenticated"}), 401
-
-    body = request.get_json(force=True) or {}
-    ticker = (body.get("ticker") or "").strip().upper()
-    side = (body.get("side") or "").strip().lower()
-    qty_raw = body.get("quantity")
-
-    # Basic validation
-    try:
-        quantity = int(qty_raw)
-    except (TypeError, ValueError):
-        quantity = 0
-
-    if not ticker:
-        return jsonify({"detail": "Ticker is required"}), 400
-    if side != "buy":
-        return jsonify({"detail": "Only 'buy' is supported at this time"}), 400
-    if quantity <= 0:
-        return jsonify({"detail": "Quantity must be a positive integer"}), 400
-
-    #This is what will enforce market hours on the buy page...you can also use it on the sell page
-    try:
-        require_market_open()
-    except PermissionError as pe:
-        payload = pe.args[0] if pe.args else {"detail": "Markey is closed. Go homer Rodger!"}
-        return jsonify(payload), 403
-
-    try:
-        conn = get_db_connection()
-        with conn:
-            with conn.cursor() as cur:
-                # 1) Get current price for ticker (must be listed)
-                cur.execute("""
-                    SELECT current_price
-                    FROM stocks
-                    WHERE ticker = %s AND is_listed = TRUE
-                    LIMIT 1;
-                """, (ticker,))
-                row = cur.fetchone()
-                if not row:
-                    return jsonify({"detail": f"Ticker {ticker} not found or not listed"}), 404
-                price = float(row[0])
-                total_value = round(price * quantity, 2)
-
-                # 2) Deduct cash if enough balance (atomic guard)
-                cur.execute("""
-                    UPDATE users
-                       SET cash_balance = cash_balance - %s
-                     WHERE id = %s
-                       AND cash_balance >= %s
-                 RETURNING cash_balance;
-                """, (total_value, user["id"], total_value))
-                row = cur.fetchone()
-                if not row:
-                    # rollback happens automatically on leaving the 'with conn' if exception is raised
-                    return jsonify({"detail": "Insufficient funds"}), 400
-                new_cash_balance = float(row[0])
-
-                # 3) Upsert position (recompute average cost)
-                #    avg_cost' = (old_qty*old_avg + qty*price) / (old_qty + qty)
-                #    Handle first-buy case by COALESCE.
-                cur.execute("""
-                    INSERT INTO user_positions (user_id, ticker, quantity, avg_cost)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (user_id, ticker) DO UPDATE
-                    SET quantity = user_positions.quantity + EXCLUDED.quantity,
-                        avg_cost = ROUND(
-                            (
-                              (user_positions.quantity * user_positions.avg_cost)
-                              + (EXCLUDED.quantity * EXCLUDED.avg_cost)
-                            ) / NULLIF(user_positions.quantity + EXCLUDED.quantity, 0)
-                        , 2),
-                        updated_at = now()
-                    RETURNING quantity, avg_cost;
-                """, (user["id"], ticker, quantity, price))
-                pos_row = cur.fetchone()
-                new_qty = float(pos_row[0]) if pos_row else quantity
-                new_avg = float(pos_row[1]) if pos_row else price
-
-                # 4) Insert transaction record
-                cur.execute("""
-                    INSERT INTO transactions (
-                        user_id, type, ticker, quantity, price, total_value
-                    )
-                    VALUES (%s, 'buy', %s, %s, %s, %s)
-                    RETURNING id;
-                """, (user["id"], ticker, quantity, price, total_value))
-                _tx_id = cur.fetchone()[0]
-
-        # Success response
-        return jsonify({
-            "ticker": ticker,
-            "price": price,
-            "quantity": quantity,
-            "total_value": total_value,
-            "new_cash_balance": new_cash_balance,
-            "position": {"quantity": new_qty, "avg_cost": new_avg}
-        }), 201
-
-    except Exception as e:
-        return jsonify({"detail": str(e)}), 500
 
 if __name__ == "__main__":
     # Only used if you run app.py directly; systemd runs gunicorn

@@ -76,14 +76,21 @@
         <div class="container">
           <section class="card" aria-labelledby="portfolio-title">
             <h2 class="page-title" id="portfolio-title">Your Portfolio</h2>
+            <!-- Page toolbar: refresh action and status note for transparency -->
+            <div class="actions" style="margin-bottom: 12px">
+              <button id="refresh-btn" class="btn btn-accent" type="button">
+                Refresh
+              </button>
+              <span id="last-updated" class="muted" aria-live="polite"></span>
+            </div>
             <div class="totals">
               <div class="stat">
-                <span class="label">Cash</span>
-				<span class="value" id="cash-total">$—</span>
+                <span class="label">Cash</span
+                ><span class="value" id="cash-value">$—</span>
               </div>
               <div class="stat">
                 <span class="label">Portfolio</span
-                ><span class="value" id="portfolio-total">$—</span>
+                ><span class="value" id="portfolio-value">$—</span>
               </div>
             </div>
             <div
@@ -100,7 +107,7 @@
                     <th scope="col">Total Value</th>
                   </tr>
                 </thead>
-                <tbody id="holdings-body">
+                <tbody>
                   <tr>
                     <td>—</td>
                     <td>—</td>
@@ -152,74 +159,150 @@
         </div>
       </footer>
     </div>
-	<script type="module">
-	    import { requireAuth } from "../javascript/api.js";
-	    requireAuth();
-		
-		const fmtMoney = (value) => {
-		  const n = Number(value);
-		  if (!Number).isFinite(n))
-		    return "-";
-		  return n.toLocaleString(undefined, {
-		    minimumFractionDigits: 2,
-			maximumFractionDigits: 2,
-		  })
-		};
-		
-		//This should grab DOM nodes
-		const cashEl = document.getElementById("cash-total");
-		const portfolioEl = document.getElementById("portfolio-total");
-		const tbody = document.getElementById("holdings-body");
-		
-		async function loadPortfolio() {
-		  try {
-		    const data = await getPortfolio();
-			
-			//totals
-			if (cashEl) {
-			  cashEl.textContent = `$${fmtMoney(data.cash_balance)}`;
-			}
-			if(portfolioEl) 
-			  portfolioEl.textContent = `$${fmtMoney(data.portfolio_value)}`;
-		    }
-			
-			if (!tbody) return;
-			tbody.innerHTML = "";
-			
-			const holdings = data.holdings || [];
-			
-			//In case no holdings
-			if (holdings.length == 0) {
-			  const tr = document.createElement("tr");
-			  tr.innerHTML = ` <td colspan="4" class="muted">You don't have any holdings yet!</td> `;
-			  tbody.appendChild(tr);
-			  return;
-			}
-			  
-			//Now this will render each holding row  
-			holdings.forEach((h) => {  
-			  const tr = document.createElement("tr");
-			  tr.innerHTML = `<td>${h.ticker}</td>
-							  <td>${Number(h.quantity).toLocaleString()}</td>
-							  <td>${fmtMoney(h.current_price)}</td>
-							  <td>${fmtMoney(h.total_value)}</td>
-							  `;
-							  tbody.appendChild(tr);
-			  });
-			
-			catch (err) {
-			  console.error("Failed to load portfolio:", err);
-			  if (tbody) {
-			    tbody.innerHTML = `
-				  <tr>
-				    <td colspan="4" class="muted">Failed to load portfolio!.</td>
-				  </tr>
-				  `;
-				}
-			}
-		}
-		
-		loadPortfolio();
-	</script>
+    <script type="module">
+      /*
+       * Portfolio page script (documented for clarity)
+       *
+       * Responsibilities
+       * - Require authentication (redirects to login if no token)
+       * - Load cash balance from /account
+       * - Load positions from /portfolio/holdings (fallback to sample data if unavailable)
+       * - Load prices from /market/tickers (fallback to sample prices if unavailable)
+       * - Render positions table and aggregate portfolio value
+       * - Provide a Refresh button and "last updated" status
+       */
+      import {
+        requireAuth,
+        getBalance,
+        getHoldings,
+        listTickers,
+      } from "../javascript/api.js";
+
+      // Gate access: user must be signed in
+      requireAuth();
+
+      // Utilities and DOM references
+      const fmtMoney = (n) =>
+        Number(n || 0).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+
+      const cashEl = document.getElementById("cash-value");
+      const portfolioEl = document.getElementById("portfolio-value");
+      const tbody = document.querySelector(".data-table tbody");
+      const refreshBtn = document.getElementById("refresh-btn");
+      const lastUpdated = document.getElementById("last-updated");
+
+      if (refreshBtn)
+        refreshBtn.addEventListener("click", () => loadPortfolioData());
+
+      async function loadPortfolioData() {
+        // Show a neutral loading row while we fetch data
+        if (tbody) {
+          tbody.innerHTML =
+            '<tr><td colspan="4" style="text-align:center; padding:1rem; color:#64748b;">Loading…</td></tr>';
+        }
+
+        try {
+          // 1) Balance
+          const { cash_balance = 0 } = (await getBalance()) || {};
+          if (cashEl) cashEl.textContent = `$${fmtMoney(cash_balance)}`;
+
+          // 2) Holdings (fallback to sample if endpoint missing)
+          let holdings = [];
+          try {
+            holdings = (await getHoldings()) || [];
+          } catch (_) {
+            holdings = [
+              { ticker: "AAPL", quantity: 10 },
+              { ticker: "MSFT", quantity: 6 },
+            ];
+          }
+
+          // 3) Prices (fallback to sample if endpoint missing)
+          let tickers = [];
+          try {
+            tickers = (await listTickers()) || [];
+          } catch (_) {
+            tickers = [
+              {
+                ticker: "AAPL",
+                company_name: "Apple Inc.",
+                current_price: 191.12,
+              },
+              {
+                ticker: "MSFT",
+                company_name: "Microsoft Corp.",
+                current_price: 414.22,
+              },
+              {
+                ticker: "AMZN",
+                company_name: "Amazon.com, Inc.",
+                current_price: 176.45,
+              },
+            ];
+          }
+
+          // Fast lookup for price by ticker
+          const priceMap = new Map();
+          tickers.forEach((t) =>
+            priceMap.set(
+              String(t.ticker).toUpperCase(),
+              Number(t.current_price)
+            )
+          );
+
+          // 4) Render positions and compute total
+          let portfolioTotal = 0;
+          if (tbody) {
+            tbody.innerHTML = "";
+            if (holdings.length) {
+              holdings.forEach((h) => {
+                const ticker = String(h.ticker || h.symbol || "").toUpperCase();
+                const quantity = Number(h.quantity || h.shares || 0);
+                const px = priceMap.get(ticker) || Number(h.current_price || 0);
+                const total = quantity * px;
+                portfolioTotal += total;
+
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                  <td>${ticker}</td>
+                  <td>${quantity.toLocaleString()}</td>
+                  <td>$${fmtMoney(px)}</td>
+                  <td>$${fmtMoney(total)}</td>
+                `;
+                tbody.appendChild(tr);
+              });
+            } else {
+              const tr = document.createElement("tr");
+              tr.innerHTML = `
+                <td colspan="4" style="text-align:center; padding:1.25rem; color:#64748b;">
+                  No holdings yet. Start by <a href="./buy.html" class="text-link">buying some stocks</a>.
+                </td>
+              `;
+              tbody.appendChild(tr);
+            }
+          }
+
+          if (portfolioEl)
+            portfolioEl.textContent = `$${fmtMoney(portfolioTotal)}`;
+          if (lastUpdated)
+            lastUpdated.textContent = `Last updated ${new Date().toLocaleString()}`;
+        } catch (error) {
+          // Render a friendly error row
+          if (tbody) {
+            tbody.innerHTML = `
+              <tr>
+                <td colspan="4" style="text-align:center; padding:1.25rem; color:#ef4444;">Error loading portfolio data. Please refresh.</td>
+              </tr>
+            `;
+          }
+        }
+      }
+
+      // Initial load
+      loadPortfolioData();
+    </script>
   </body>
 </html>
