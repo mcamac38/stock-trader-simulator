@@ -196,7 +196,7 @@
 		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
 	</script>
 	<script type="module">
-	import { requireAuth, placeOrder, renderCash } from "../javascript/api.js";
+	import { requireAuth, sellOrder, renderCash } from "../javascript/api.js";
 
 	// Requires login & (optionally) show cash in a header <span id="cash-amount">
 	requireAuth();
@@ -308,7 +308,7 @@
 
 		try {
 		// POST /trades/order { ticker, side: "sell", quantity }
-		const res = await placeOrder({ ticker: rawTicker, side: "sell", quantity: qty });
+		const res = await sellOrder({ ticker: rawTicker, side: "sell", quantity: qty });
 
 		if (qtyInput) qtyInput.value = "";
 			showSuccess(`SELL ${res.ticker} @ ${fmt(res.price)} × ${res.quantity} = $${fmt(res.total_value)}`);
