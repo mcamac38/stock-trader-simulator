@@ -182,13 +182,13 @@
 	  window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
 	</script>
 	<script type="module">
-	  import { requireAuth, listTickers } from "../javascript/api.js";
+	  import { requireAuth, listTransactions } from "../javascript/api.js";
 	  requireAuth();
 	  
-	  const = document.querySelector("form");
-	  const = document.getElementById("filterType");
-	  const = document.getElementById("symbolFilter");
-	  const = document.querySelector(".data-table tbody");
+	  const form = document.querySelector("form");
+	  const typeSelect = document.getElementById("filterType");
+	  const symbolInput = document.getElementById("symbolFilter");
+	  const tableBody = document.querySelector(".data-table tbody");
 	  
 	  const fmtMoney = (n) =>
 	    (isFinite(Number(n)) ? Number(n) : 0).toLocaleString(undefined, {
