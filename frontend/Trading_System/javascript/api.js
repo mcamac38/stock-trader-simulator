@@ -48,6 +48,21 @@ export async function loginUser({ username, password }) {
 export async function listTickers(){ return http("/market/tickers"); }
 export async function getPublicMarketHours(){ return http("/market/hours"); }
 export async function getMarketStatus(){ return http("/market/status"); }
+export async function listTransactions({ type, symbol } = {}) {
+	const params = new URLSearchParams();
+	
+	if (type && type !== "all") {
+		params.set("type", type);
+    }
+	if (symbol) {
+		params.set("symbol", symbol.trim());
+	}
+	
+	const qs = params.toString();
+	const path = qs ? `/transactions?${qs}` : "/transactions";
+	
+	return http(path, { auth: true });
+}
 
 // Account & Cash
 export async function getBalance(){ return http("/account", { auth:true }); }
@@ -62,7 +77,7 @@ export async function sellOrder({ticker, side, quantity }){
   return http("/trade/sell", {method:"POST", auth: true, body:{ticker, side, quantity: Number(quantity) }});
 }
 export async function getPortfolio(){ return http("/portfolio", { auth:true }); }
-export async function getTransactions(){ return http("/portfolio/transactions", { auth:true }); }
+export async function getTransactions(){ return http("/transactions", { auth:true }); }
 
 // Guards/helpers
 export function requireAuth(){

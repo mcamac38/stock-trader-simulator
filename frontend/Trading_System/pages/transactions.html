@@ -171,16 +171,103 @@
             <span>© 2025 Stock Trading Simulator</span>
             <div class="social">
               <a href="#" aria-label="Twitter">T</a>
-              <a href="#" aria-label="LinkedIn">in</a>
+              <a href="#" aria-label="LinkedIn">LN</a>
               <a href="#" aria-label="GitHub">GH</a>
             </div>
           </div>
         </div>
       </footer>
     </div>
+	<script>
+	  window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
+	</script>
 	<script type="module">
-	  import { requireAuth } from "../javascript/api.js";
+	  import { requireAuth, listTickers } from "../javascript/api.js";
 	  requireAuth();
+	  
+	  const = document.querySelector("form");
+	  const = document.getElementById("filterType");
+	  const = document.getElementById("symbolFilter");
+	  const = document.querySelector(".data-table tbody");
+	  
+	  const fmtMoney = (n) =>
+	    (isFinite(Number(n)) ? Number(n) : 0).toLocaleString(undefined, {
+		  minimumFractionDigits: 2,
+		  maximumFractionDigits: 2,
+		  
+		});
+		
+	  const fmtDate = (iso) => {
+	    if (!iso) return "-";
+		const d = new Date(iso);
+		if (String(d) === "Invalid Date") return iso;
+		return d.toLocaleString();
+	  };
+	  
+	  function renderRows(rows) {
+	    if (!tableBody) return;
+		
+		tableBody.innerHTML = "-";
+		
+		if (!rows || !rows.length) {
+		  const tr = document.createElement("tr");
+		  tr.innerHTML = `
+		  <td>-</td>
+		  <td>-</td>
+		  <td>-</td>
+		  <td>-</td>
+		  <td>-</td>
+		  <td>-</td>
+		  `;
+		  tableBody.appendChild(tr);
+		  return;
+        }
+		
+		for (const tx of rows) {
+		  const tr = document.createElement("tr");
+		  
+		  const dateStr = fmtDate(tx.created_at);
+		  const typeStr = (tx.type || "").toUpperCase();
+		  const ticker = tx.ticker || "-";
+		  const qty = tx.quantity ?? "-";
+		  const price =
+		    tx.price != null ? `$${fmtMoney(tx.price)}` : "-";
+		  const total = 
+		    tx.total_value != null ? `$${fmtMoney(tx.total_value)}` : "-";
+			
+		  tr.innerHTML = `
+		    <td>${dateStr}</td>
+			<td>${typeStr}</td>
+			<td>${ticker}</td>
+			<td>${qty}</td>
+			<td>${price}</td>
+			<td>${total}</td>
+		  `;
+		  tableBody.appendChild(tr);
+		}
+	  }
+	  
+	  async function loadTransactionsFromFilters() {
+	    const type = typeSelect?.value || "all";
+		const symbol = (symbolInput?.value || "").trim();
+		
+		try {
+		  const rows = await listTransactions({ type, symbol });
+		  renderRows(rows);
+		}
+		catch (err) {
+		  console.error("Failed to load transactions", err);
+		  renderRows([]);
+		}
+	  }
+	  
+	  // Intercepts form submit to apply filters via the JavaScript instead if a full page reload
+	  form?addEventListener("submit", (ev) => {
+	    ev.preventDefault();
+		loadTransactionsFromFilters();
+	  });
+	  
+	  loadTransactionsFromFilters();
 	</script>
   </body>
 </html>

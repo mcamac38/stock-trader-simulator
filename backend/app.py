@@ -143,8 +143,63 @@ def db_withdraw(user_id: str, amount: float) -> float:
                 # Either user not found or insufficient funds
                 raise ValueError("Insufficient funds")
             return float(row[0])
+            
+def db_list_transactions(user_id, tx_type=None, ticker=None, limit=200):
+    """
+    Returns the most recent transaction of a user (last 200)
+    Schema assumed:
+      transactions(
+        id serial primary key,
+        user_id int, references user(id),
+        type text, e.g. is it a 'buy', 'sell', 'deposit', 'withdraw'?
+        ticker text, --obvious null for cash transactions
+        quantity integer, --same sitch
+        price numeric, --ditto
+        total_value numeric, --value calculated of the trade or cash movement
+        created_at timestamptz default now()
+      )
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                sql = """
+                   SELECT created_at, type, ticker, quantity, price, total_value
+                   FROM transactions
+                   WHERE user_id = %s
+                """
+                
+                params = [user_id]
+                
+                if tx_type:
+                    sql += " AND type = %s"
+                    params.append(tx_type)
+                    
+                if ticker:
+                    sql += " AND ticker = %s"
+                    params.append(ticker)
+                    
+                sql += " ORDER BY created_at DESC LIMIT %s"
+                params.append(limit)
+                
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+                
+        results = []
+        for created_at, ttype, tk, qty, price, total_value, in rows:
+            results.append({
+                "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else None
+                "type": ttype,
+                "ticker": tk,
+                "quantity": qty,
+                "price": float(price) if price is not None else None,
+                "total_value": float(total_value) if total_value is not None else None,
+            })
+        return results
+    finally:
+        conn.close()
 
-            # --- Administrative Controls ---
+# ------------------------------ Administrative Controls ------------------------------
 def db_get_market_hours():
     """
     Returns {"open_time": "6:00", "close_time": "17:00", "tz_name": "America/New_York"}
@@ -301,7 +356,80 @@ def db_list_market_closures():
     finally:
         conn.close()
         
+def db_upsert_market_closure( close_date_str: str, is_closed: bool, open_time_str: str | None, close_time_str: str | None, note: str | None,):
+    """
+    Insert or update a single row in market_schedule_closures.
 
+    close_date_str: "YYYY-MM-DD"
+    is_closed: True  -> full-day closure (times must be None/empty)
+                False -> open, but may use special open/close times
+    open_time_str, close_time_str: "HH:MM" or None/"" (24-hour clock)
+    """
+    # 1) Parse date
+    try:
+        close_date = datetime.strptime(close_date_str, "%Y-%m-%d").date()
+    except Exception:
+        raise ValueError("Invalid close_date; expected YYYY-MM-DD")
+
+    # Normalize empty strings to None
+    open_time_str = (open_time_str or "").strip() or None
+    close_time_str = (close_time_str or "").strip() or None
+    note = (note or "").strip() or None
+
+    # 2) Validate combinations
+    if is_closed:
+        # Fully closed: times must not be provided
+        if open_time_str is not None or close_time_str is not None:
+            raise ValueError("Closed days cannot have open_time or close_time.")
+        open_time = None
+        close_time = None
+    else:
+        # Open, possibly with half-day/special hours
+        open_time = None
+        close_time = None
+        if open_time_str is not None:
+            try:
+                oh, om = map(int, open_time_str.split(":"))
+                open_time = time(oh, om)
+            except Exception:
+                raise ValueError("Invalid open_time; expected HH:MM (24-hour).")
+        if close_time_str is not None:
+            try:
+                ch, cm = map(int, close_time_str.split(":"))
+                close_time = time(ch, cm)
+            except Exception:
+                raise ValueError("Invalid close_time; expected HH:MM (24-hour).")
+
+        # If both provided, ensure open < close
+        if open_time is not None and close_time is not None and not (open_time < close_time):
+            raise ValueError("For special hours, open_time must be earlier than close_time.")
+
+    # 3) Upsert row
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO market_schedule_closures (close_date, is_closed, open_time, close_time, note, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, now())
+                    ON CONFLICT (close_date) DO UPDATE
+                      SET is_closed = EXCLUDED.is_closed,
+                          open_time = EXCLUDED.open_time,
+                          close_time = EXCLUDED.close_time,
+                          note = EXCLUDED.note,
+                          updated_at = now()
+                """, (close_date, is_closed, open_time, close_time, note))
+
+        # Return a normalized dict (same shape as db_list_market_closures)
+        return {
+            "close_date": close_date.isoformat(),
+            "is_closed": bool(is_closed),
+            "open_time": open_time.strftime("%H:%M") if open_time is not None else None,
+            "close_time": close_time.strftime("%H:%M") if close_time is not None else None,
+            "note": note,
+        }
+    finally:
+        conn.close()        
         
 def db_get_user_holdings(user_id: int):
     """
@@ -537,7 +665,7 @@ def dbcheck():
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 500
 
-# ---- Auth helpers ----
+#  ------------------------------ Auth helpers  ------------------------------
 def get_current_user():
     """Extract current user from Authorization: Bearer <token>.
        Supports JWT (preferred) and legacy 'username as token' fallback."""
@@ -688,6 +816,43 @@ def account():
             "role":      user["role"],
             "cash_balance": balance,
         })
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+        
+@app.route("/transactions", methods=["GET"])
+def get_transactions():
+    """
+    This will return the list of transactions of the current user order from newest to oldest
+    
+    Should be GET /transactions?type=buy|sell|deposit|withdraw||all&symbol=AAPL
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Not Authenticated"}), 401
+        
+    #this reads the filters from the query string
+    raw_type = (request.args.get("type") or "") .strip().lower()
+    #treats all  or empty as having no filter
+    if raw_type in ("", "all"):
+        tx_type = None
+    else:
+        tx_type = raw_type
+        
+    symbol = (
+        request.args.get("symbol")
+        or request.args.get("ticker")
+        or ""
+    ).strip().upper()
+    ticker = symbol or None
+    
+    try:
+        items = db_list_transactions(
+            user_id=user["id"],
+            tx_type=tx_type,
+            ticker=ticker,
+        )
+        return jsonify(items), 200
+        
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
@@ -1006,12 +1171,6 @@ def get_portfolio():
     
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
-        
-@app.route("/portfolio/transactions", methods=["GET"])
-def user_transactions():
-    user = get_current_user()
-    if not user:
-        return jsonify({"detail": "Not Authenticated"}), 401
 
 # ---------------------------------------- ADMIN ENDPOINTS ----------------------------------------
 @app.route("/admin/stocks", methods=["POST"])
