@@ -262,7 +262,7 @@
 	  }
 	  
 	  // Intercepts form submit to apply filters via the JavaScript instead if a full page reload
-	  form?addEventListener("submit", (ev) => {
+	  form?.addEventListener("submit", (ev) => {
 	    ev.preventDefault();
 		loadTransactionsFromFilters();
 	  });
