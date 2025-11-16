@@ -156,11 +156,20 @@
         </div>
       </footer>
     </div>
-	<script src="http://cdn.jsdeliver.net/npm/chart.js"></script>
+	<script src="https://cdn.jsdeliver.net/npm/chart.js"></script>
 	<script type="module">
 	    import { requireAuth, getPortfolio } from "../javascript/api.js";
-	    requireAuth();
+	    
+		requireAuth();
 		
+		//This should grab DOM nodes
+		const cashEl = document.getElementById("cash-total");
+		const portfolioEl = document.getElementById("portfolio-total");
+		const tbody = document.getElementById("holdings-body");
+		const chartCanvas = document.getElementById("portfolio-chart");
+		
+		let portfolioChart = null;
+
 		const fmtMoney = (value) => {
 		  const n = Number(value);
 		  if (!Number.isFinite(n))
@@ -171,21 +180,13 @@
 		  })
 		};
 		
-		//This should grab DOM nodes
-		const cashEl = document.getElementById("cash-total");
-		const portfolioEl = document.getElementById("portfolio-total");
-		const tbody = document.getElementById("holdings-body");
-		const chartCanvas = document.getElementById("portfolio-chart");
-		
-		let portfolioChart = null;
-		
-		function renderTotals({ cash_balance, portfolio_value }) {
-		  if (cashEl) {
-			  cashEl.textContent = `$${fmtMoney(data.cash_balance)}`;
-			}
-			if (portfolioEl) {
-			  portfolioEl.textContent = `$${fmtMoney(data.portfolio_value)}`;
-		    }
+	
+		function renderTotals(data) {
+		  const cash = Number(data.cash_balance ?? 0);
+		  const port = Number(data.portfolio_value ?? 0);
+
+		  if (cashEl) cashEl.textContent = `$${fmtMoney(cash)}`;
+		  if (portfolioEl) portfolioEl.textContent = `$${fmtMoney(port)}`;
 		}
 		
 		function renderHoldings(holdings) {
