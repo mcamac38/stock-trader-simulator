@@ -619,7 +619,7 @@ app = Flask(__name__)
 
 # Allow your Amplify frontend (set to your exact Amplify URL)
 AMPLIFY_ORIGIN = os.getenv("AMPLIFY_ORIGIN", "https://main.d2bmkzvarvu1na.amplifyapp.com")
-CORS(app, resources={r"/*": {"origins": [AMPLIFY_ORIGIN, "http://localhost:5173", "http://127.0.0.1:5173"]}}, supports_credentials=True, allow_headers=["Content-Type", "Authoriz>
+CORS(app, resources={r"/*": {"origins": [AMPLIFY_ORIGIN, "http://localhost:5173", "http://127.0.0.1:5173"]}}, supports_credentials=True, allow_headers=["Content-Type", "Authorize>
 
 # ---- Demo in-memory "DB" ----
 USERS = {}      # username -> {password, full_name, email, role}
@@ -873,6 +873,20 @@ def cash_deposit():
 
     try:
         new_balance = db_deposit(user["id"], amount)  # <-- use users-table helper
+        
+        try:
+            conn = get_db_connection()
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO transactions (
+                            user_id, type, ticker, quantity, price, total_value
+                        )
+                        VALUEs (%s, 'deposit', NULL, NULL, NULL, %s);
+                    """, (user["id"], amount))
+        except Exception:
+            pass
+            
         return jsonify({"ok": True, "new_balance": new_balance})
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
@@ -894,6 +908,21 @@ def cash_withdraw():
 
     try:
         new_balance = db_withdraw(user["id"], amount)  # <-- use users-table helper
+        
+        try:
+            conn = get_db_connection()
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO transactions (
+                            user_id, type, ticker, quantity, price, total_value
+                        )
+                        VALUES (%s, 'withdraw', NULL, NULL, NULL, %s);
+                    """, (user["id"], amount))
+        except Exception:
+            # Optional: log this somewhere; don't interrupt the withdraw
+            pass        
+        
         return jsonify({"ok": True, "new_balance": new_balance})
     except ValueError as ve:
         # raised by db_withdraw on insufficient funds

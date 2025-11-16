@@ -112,11 +112,7 @@
             </div>
             <h3 class="section-title">Portfolio Value</h3>
             <div class="chart" aria-label="Portfolio value over time">
-			  <canvas
-			    id="portfolio-chart"
-				aria-label="Portfolio value over the last 7 days"
-				role="img">
-			  </canvas>
+              Portfolio chart will render here
             </div>
           </section>
         </div>
@@ -156,7 +152,6 @@
         </div>
       </footer>
     </div>
-	<script src="http://cdn.jsdeliver.net/npm/chart.js"></script>
 	<script type="module">
 	    import { requireAuth, getPortfolio } from "../javascript/api.js";
 	    requireAuth();
@@ -175,32 +170,33 @@
 		const cashEl = document.getElementById("cash-total");
 		const portfolioEl = document.getElementById("portfolio-total");
 		const tbody = document.getElementById("holdings-body");
-		const chartCanvas = document.getElementById("portfolio-chart");
 		
-		let portfolioChart = null;
-		
-		function renderTotals({ cash_balance, portfolio_value }) {
-		  if (cashEl) {
+		async function loadPortfolio() {
+		  try {
+		    const data = await getPortfolio();
+			
+			//totals
+			if (cashEl) {
 			  cashEl.textContent = `$${fmtMoney(data.cash_balance)}`;
 			}
 			if (portfolioEl) {
 			  portfolioEl.textContent = `$${fmtMoney(data.portfolio_value)}`;
 		    }
-		}
-		
-		function renderHoldings(holdings) {
-		  	if (!tbody) return;
+			
+			if (!tbody) return;
 			tbody.innerHTML = "";
 			
+			const holdings = data.holdings || [];
+			
 			//In case no holdings
-			if (!holdings || holdings.length == 0) {
+			if (holdings.length == 0) {
 			  const tr = document.createElement("tr");
 			  tr.innerHTML = ` <td colspan="4" class="muted">You don't have any holdings yet!</td> `;
 			  tbody.appendChild(tr);
 			  return;
 			}
 			  
-			  //Now this will render each holding row  
+			//Now this will render each holding row  
 			holdings.forEach((h) => {  
 			  const tr = document.createElement("tr");
 			  tr.innerHTML = `<td>${h.ticker}</td>
@@ -209,96 +205,18 @@
 							  <td>${fmtMoney(h.total_value)}</td>
 							  `;
 							  tbody.appendChild(tr);
-			});
-		}
-		
-		function renderPortfolioChart(currentValue) {
-		  if (!chartCanvas || typeof Chart == "undefined") return;
-		  
-		  const ctx = chartCanvas.getContext("2d");
-		  const base = Number(currentValue) || 0;
-		  
-		  const days = 7;
-		  const today = new Date();
-		  const labels = [];
-		  const values = [];
-		  
-		  for (let daysAgo = days - 1; daysAgo >= 0; daysAgo--) {
-		    const d = new Date(today);
-			d.setDate(today.getDate() - daysAgo);
-			
-			labels.push(
-			  d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-			);
-			
-			if (base <= 0) {
-			  values.push(0);
+			  });
 			}
-			else {
-			  const t = 1 - daysAgo / (days - 1); //0 -> oldest, 1 -> today
-			  const value = base * (0.9 + 0.1 * t); // 90% of base up to 100%
-			  values.push(value);
-			}
-		  }
-		  
-		  if (portfolioChart) {
-		    portfolioChart.destroy();
-		  }
-		  
-		  portfolioChart = new Chart(ctx, {
-		    type: "line",
-			data: {
-			  labels,
-			  datasets: [
-			    {
-				  labels: "Portfolio value",
-				  data: values,
-				  tension: 0.25,
-				  fill: false,
+			catch (err) {
+			  console.error("Failed to load portfolio:", err);
+			  if (tbody) {
+			    tbody.innerHTML = `
+				  <tr>
+				    <td colspan="4" class="muted">Failed to load portfolio!.</td>
+				  </tr>
+				  `;
 				}
-			  ],
-			},
-			options: {
-			  responsive: true,
-			  maintainAspectRatio: false,
-			  plugins: {
-			    legend: { display: false },
-				tooltip: {
-				  callbacks: {
-				    label: (context) => `$${fmtMoney(context.parsed.y)}`,
-				  },
-				},
-			  },
-			  scales: {
-			    y: {
-				  ticks: {
-				    callbacks: (val) => `$${Number(val).toLocaleString()}`,
-				  },	
-		        },
-			  },
-			},
-		  });
-		}
-		
-		async function loadPortfolio() {
-		  try {
-		    const data = await getPortfolio();
-			
-			renderTotals(data);
-			renderHoldings(data.holdings || []);
-			renderPortfolioChart(data.portfolio_value);
-		  }
-		  
-		  catch (err) {
-		    console.error("Failed to load portfolio:", err);
-			if (tbody) {
-			  tbody.innerHTML = `
-			    <tr>
-				  <td colspan="4" class="muted">Failed to load portfolio!.</td>
-				</tr>
-				`;
-			  }
-		  }
+			}
 		}
 		
 		loadPortfolio();
