@@ -156,7 +156,7 @@
         </div>
       </footer>
     </div>
-	<script src="https://cdn.jsdeliver.net/npm/chart.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 	<script type="module">
 	    import { requireAuth, getPortfolio } from "../javascript/api.js";
 	    
@@ -252,7 +252,7 @@
 			  labels,
 			  datasets: [
 			    {
-				  labels: "Portfolio value",
+				  label: "Portfolio value",
 				  data: values,
 				  tension: 0.25,
 				  fill: false,
@@ -273,7 +273,7 @@
 			  scales: {
 			    y: {
 				  ticks: {
-				    callbacks: (val) => `$${Number(val).toLocaleString()}`,
+				    callback: (val) => `$${Number(val).toLocaleString()}`,
 				  },	
 		        },
 			  },
