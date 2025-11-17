@@ -77,6 +77,10 @@ export async function sellOrder({ticker, side, quantity }){
   return http("/trade/sell", {method:"POST", auth: true, body:{ticker, side, quantity: Number(quantity) }});
 }
 export async function getPortfolio(){ return http("/portfolio", { auth:true }); }
+export async function getPortfolioHistory(days = 7) {
+  const query = days ? `?days=${encodeURIComponent(days)}` : "";
+  return http(`/portfolio/history${query}`, { auth: true });
+}
 export async function getTransactions(){ return http("/transactions", { auth:true }); }
 
 // Guards/helpers
