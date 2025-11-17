@@ -213,7 +213,7 @@
 			});
 		}
 		
-		async function renderPortfolioChart(currentValue) {
+		async function renderPortfolioChart() {
 		  if (!chartCanvas || typeof Chart == "undefined") return;
 		  
 		  let response;
@@ -234,7 +234,7 @@
             const d = new Date(point.date);
 			return d.toLocaleDateString(undefined, {
 			  month: "short",
-			  day: "numeric,
+			  day: "numeric",
 			});
 		  });
 		  
