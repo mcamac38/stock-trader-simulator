@@ -216,31 +216,31 @@
 		function renderPortfolioChart(currentValue) {
 		  if (!chartCanvas || typeof Chart == "undefined") return;
 		  
-		  const ctx = chartCanvas.getContext("2d");
-		  const base = Number(currentValue) || 0;
-		  
-		  const days = 7;
-		  const today = new Date();
-		  const labels = [];
-		  const values = [];
-		  
-		  for (let daysAgo = days - 1; daysAgo >= 0; daysAgo--) {
-		    const d = new Date(today);
-			d.setDate(today.getDate() - daysAgo);
-			
-			labels.push(
-			  d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-			);
-			
-			if (base <= 0) {
-			  values.push(0);
-			}
-			else {
-			  const t = 1 - daysAgo / (days - 1); //0 -> oldest, 1 -> today
-			  const value = base * (0.9 + 0.1 * t); // 90% of base up to 100%
-			  values.push(value);
-			}
+		  let response;
+		  try {
+		    response = await getPortfolioHistory(7);
 		  }
+		  catch (err) {
+		    console.error("Failed to load portfolio history", err);
+			return;
+		  }
+		  
+		  const history = (response && response.history) || [];
+		  if (!history.length) {
+		    return;
+		  }
+		  
+          const labels = history.map((point) => {
+            const d = new Date(point.date);
+			return d.toLocaleDateString(undefined, {
+			  month: "short",
+			  day: "numeric,
+			});
+		  });
+		  
+		  const value = history.map((point) => Number(point.value) || 0;
+ 
+		  const ctx = chartCanvas.getContext("2d");
 		  
 		  if (portfolioChart) {
 		    portfolioChart.destroy();
@@ -287,7 +287,7 @@
 			
 			renderTotals(data);
 			renderHoldings(data.holdings || []);
-			renderPortfolioChart(data.portfolio_value);
+			await renderPortfolioChart();
 		  }
 		  
 		  catch (err) {

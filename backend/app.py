@@ -472,6 +472,70 @@ def db_get_user_holdings(user_id: int):
     finally:
         conn.close()
         
+def db_get_portfolio_history(user_id: int, days: int = 7):
+    """
+    Returns cumulative 'invested' value per day for the last N days,
+    based on the transactions table.
+
+    For each transaction:
+      - type = 'buy'      -> +total_value
+      - type = 'sell'     -> -total_value
+      - type = 'deposit'  -> +total_value (if you log these)
+      - type = 'withdraw' -> -total_value (if you log these)
+
+    Output list:
+      [ { "date": "2025-11-10", "value": 1234.56 }, ... ]
+    """
+    from collections import defaultdict
+
+    conn = get_db_connection()
+    try:
+        start_date = date.today() - timedelta(days=days - 1)
+
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        created_at::date AS d,
+                        type,
+                        total_value
+                    FROM transactions
+                    WHERE user_id = %s
+                      AND created_at::date >= %s
+                    ORDER BY d ASC;
+                    """,
+                    (user_id, start_date),
+                )
+                rows = cur.fetchall()
+
+        # Date -> net change that day
+        changes = defaultdict(float)
+        for d, ttype, total in rows:
+            total = float(total or 0)
+            ttype = (ttype or "").lower()
+            if ttype in ("buy", "deposit"):
+                changes[d] += total
+            elif ttype in ("sell", "withdraw"):
+                changes[d] -= total
+
+        # Build cumulative series
+        history = []
+        cumulative = 0.0
+        for i in range(days):
+            current = start_date + timedelta(days=i)
+            cumulative += changes.get(current, 0.0)
+            history.append(
+                {
+                    "date": current.isoformat(),
+                    "value": cumulative,
+                }
+            )
+
+        return history
+    finally:
+        conn.close()
+        
 # -------------------------------MARKET OPEN AND CLOSURE ENFORCEMENT HELPER------------------------------
                      
 def is_market_open(now_utc: datetime | None = None) -> dict:
@@ -1198,6 +1262,36 @@ def get_portfolio():
             }
         )
     
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+        
+@app.route("/portfolio/history", methods=["GET"])
+def get_portfolio_history():
+    """
+    Returns historical portfolio values for the current user.
+
+    Query param:
+      ?days=7  (optional, defaults to 7, max 90)
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"detail": "Not authenticated"}), 401
+
+    # Read 'days' from query string, with sane defaults
+    raw_days = request.args.get("days", "7")
+    try:
+        days = int(raw_days)
+    except ValueError:
+        days = 7
+
+    if days < 1:
+        days = 1
+    if days > 90:
+        days = 90
+
+    try:
+        history = db_get_portfolio_history(user["id"], days)
+        return jsonify({"history": history}), 200
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
