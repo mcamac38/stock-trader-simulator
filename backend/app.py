@@ -632,7 +632,8 @@ def ticker_due_prices():
     Concurrency-safe via FOR UPDATE SKIP LOCKED.
     """
     now = datetime.now(timezone.utc)
-    threshold = now - timedelta(minutes=INTERVAL_MINUTES)    
+    threshold = now - timedelta(minutes=INTERVAL_MINUTES)
+    changed = 0    
     
     conn = get_db_connection()
     try:
@@ -640,39 +641,81 @@ def ticker_due_prices():
             with conn.cursor() as cur:
                 # 1) Read candidates that LOOK due using a Python-computed threshold
                 cur.execute("""
-                    SELECT ticker, current_price, last_price_update
+                    SELECT ticker, current_price
                     FROM stocks
                     WHERE is_listed = TRUE
                       AND (last_price_update IS NULL
                            OR last_price_update <= %s)
+                      FOR UPDATE SKIP LOCKED
                 """, (cutoff,))
-                rows = cur.fetchall()
+                due_rows = cur.fetchall()
                 
-                for ticker, current_price, last_ts in rows:
-                    price = float(current_price)
+                for ticker, current_price in due_rows:
+                    price = float(current_price or 0.0)
+                    if price < MIN_PRICE:
+                        price = MIN_PRICE
 
                     # choose none / up / down (≈1/3 each)
-                    r = random.random()
-                    if r < (1/3):
+                    roll = random.random()
+                    if roll < (1/3):
                         new_price = round(max(MIN_PRICE, price), 2)  # none
                     else:
                         pct = random.uniform(STEP_MIN, STEP_MAX)
-                        new_price = round(max(MIN_PRICE, price * (1 + pct if r < (2/3) else 1 - pct)), 2)
-
-                    # 2) Update only if STILL due (prevents double-ticks across workers)
+                        if roll < (2/3):
+                            new_price = round(max(MIN_PRICE, price * (1 + pct)), 2) #up
+                        else:
+                            new_price = round(max(MIN_PRICE, price * (1 - pct)), 2) #down
+                            
+                    # 2) Update price + O/H/L in one atomic UPDATE
+                    #    - If this is the first tick of the day (date changed or last_ohl_date is NULL),
+                    #      set open=high=low=new_price and stamp last_ohl_date = CURRENT_DATE.
+                    #    - Otherwise, expand high/low with the new price.   #     
+                    
                     cur.execute("""
                         UPDATE stocks
-                        SET
-                          previous_price    = CASE WHEN current_price <> %s THEN current_price ELSE previous_price END,
-                          current_price     = %s,
-                          last_price_update = %s
-                        WHERE ticker = %s
-                          AND (last_price_update IS NULL OR last_price_update <= %s)
-                    """, (new_price, new_price, now, ticker, cutoff))
+                           SET
+                             previous_price     = CASE
+                                                    WHEN current_price <> %s THEN current_price
+                                                    ELSE previous_price
+                                                  END,
+                             current_price      = %s,
+                             last_price_update  = %s,
 
-                    if cur.rowcount:  # 1 if we won the race, 0 if someone else updated first
+
+                             -- reset O/H/L on first tick of the day
+                             last_ohl_date      = COALESCE(last_ohl_date, CURRENT_DATE),
+                             open_price         = CASE
+                                                    WHEN last_ohl_date <> CURRENT_DATE OR open_price IS NULL
+                                                      THEN %s
+                                                    ELSE open_price
+                                                  END,
+                             day_high           = CASE
+                                                    WHEN last_ohl_date <> CURRENT_DATE OR day_high IS NULL
+                                                      THEN %s
+                                                    ELSE GREATEST(day_high, %s)
+                                                  END,
+                             day_low            = CASE
+                                                    WHEN last_ohl_date <> CURRENT_DATE OR day_low IS NULL
+                                                      THEN %s
+                                                    ELSE LEAST(day_low, %s)
+                                                  END,
+                             -- stamp the roll date after evaluating above conditions
+                             last_ohl_date      = CURRENT_DATE
+                         WHERE ticker = %s
+                           AND (last_price_update IS NULL OR last_price_update <= %s)
+                    """, (
+                        new_price,                 # previous_price CASE compare target
+                        new_price, now,            # current_price, last_price_update
+                        new_price,                 # open reset value
+                        new_price, new_price,      # high reset, high expand
+                        new_price, new_price,      # low reset,  low expand
+                        ticker, cutoff
+                    ))
+
+                    if cur.rowcount:
                         if new_price != price:
                             changed += 1
+
                 return changed
     finally:
         conn.close()
@@ -1027,8 +1070,13 @@ def place_order():
     try:
         require_market_open()
     except PermissionError as pe:
-        payload = pe.args[0] if pe.args else {"detail": "Markey is closed. Go homer Rodger!"}
+        payload = pe.args[0] if pe.args else {"detail": "Market is closed. Go home Rodger!"}
         return jsonify(payload), 403
+        
+    try:
+        ticker_due_prices()
+    except Exception as e:
+    app.logger.warning(f"ticker_due_prices failed: {e}")
 
     try:
         conn = get_db_connection()
@@ -1130,6 +1178,17 @@ def trade_sell():
         return jsonify({"detail": "Ticker is required"}), 400
     if quantity <= 0:
         return jsonify({"detail": "Quantity must be a positive integer"}), 400
+
+    try:
+        require_market_open()
+    except PermissionError as pe:
+        payload = pe.args[0] if pe.args else {"detail": "Market is closed. Go home Rodger!"}
+        return jsonify(payload), 403
+        
+    try:
+        ticker_due_prices()
+    except Exception as e:
+        app.logger.warning(f"ticker_due_prices failed: {e}")
 
     try:
         conn = get_db_connection()
@@ -1496,27 +1555,46 @@ def list_tickers():
     { "ticker":"ACME", "company_name":"Acme Corp", "current_price": 99.99 }
     """
     try:
-        #New: bring any symbols up-to-date before reading/this might be changed if Kayla can get orginal code fully operational
-        ticker_due_prices()
-        
-    except Exception as e:
-        print("ticker due prices error:", e)
+        # Try to tick prices; even if it fails we still return the list
+        try:
+            if is_market_open()["is_open"]:
+                ticker_due_prices()
+        except Exception as e:
+            print("ticker_due_prices error:", e)
 
         conn = get_db_connection()
         with conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT ticker, company_name, current_price, volume
+                    SELECT
+                      ticker,
+                      company_name,
+                      current_price,
+                      volume,
+                      open_price,
+                      day_high,
+                      day_low,
+                      shares_outstanding,
+                      COALESCE(shares_outstanding, 0) * current_price AS market_cap
                     FROM stocks
                     WHERE is_listed = TRUE
                     ORDER BY ticker ASC
                     LIMIT 500
                 """)
                 rows = cur.fetchall()
-        conn.close()
 
         data = [
-            {"ticker": r[0], "company_name": r[1], "current_price": float(r[2])}
+            {
+                "ticker": r[0],
+                "company_name": r[1],
+                "current_price": float(r[2]) if r[2] is not None else None,
+                "volume": int(r[3]) if r[3] is not None else 0,
+                "open_price": float(r[4]) if r[4] is not None else None,
+                "day_high": float(r[5]) if r[5] is not None else None,
+                "day_low": float(r[6]) if r[6] is not None else None,
+                "shares_outstanding": int(r[7]) if r[7] is not None else None,
+                "market_cap": float(r[8]) if r[8] is not None else 0.0,
+            }
             for r in rows
         ]
         return jsonify(data)
@@ -1525,6 +1603,13 @@ def list_tickers():
 
 @app.route("/market/tickers/<ticker>", methods=["GET"])
 def get_ticker(ticker):
+    
+    try:
+        if is_market_open()["is_open"]:
+            ticker_due_prices()
+    except Exception as e:
+        app.logger.warning(f"ticker_due_prices failed: {e}")
+    
     ticker = (ticker or "").strip().upper()
     if not ticker:
         return jsonify({"detail": "ticker required"}), 400
