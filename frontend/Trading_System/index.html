@@ -184,15 +184,33 @@
 	    const tbody = document.querySelector("tbody");
 		if (!tbody) return;
 		
+		function money(n){
+		  if (n == null || isNaN(n)) return "-";
+		return `$${Number(n).toFixed(2)}`;
+		}
+		function cap(n){
+		  if (n == null || isNaN(n)) return "-";
+		  const v = Number(n);
+		  if (v >= 1_000_000_000) return `$${v/1_000_000_000).toFixed(2)B`;
+		  if (v >= 1_000_000) return `$${v/1_000_000).toFixed(2)M`;
+		  if (v >= 1_000) return `$${v/1_000).toFixed(2)K`;
+		  return `$${v.toFixed(2)}`;
+		}		
+		
 		tbody.innerHTML = "";
 		stocks.forEach(s => {
 		  const tr = document.createElement("tr");
+
 		  tr.innerHTML = `
 		    <td>${s.ticker}</td>
 			<td>${s.company_name}</td>
-			<td>$${Number(s.current_price).toFixed(2)}</td>
-			<td>${Number(s.volume)}</td>
-			<td>—</td><td>—</td><td>—</td><td>—</td>`;
+			<td>${money(s.current_price)}</td>
+			<td>${Number(s.volume ?? 0).toLocaleString()}</td>
+			<td>${cap(s.market_cap)}</td>
+			<td>${money(s.open_price)}</td>
+			<td>${money(s.day_high)}</td>
+			<td>${money(s.day_low)}</td>
+			`;
 		  tbody.appendChild(tr);
 		});
 	  });
