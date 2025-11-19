@@ -132,7 +132,7 @@
 		try {
 			await loginUser({ username, password }) //set token in local storage
 			//go to first authenticated page (adjust path if different)
-			window.location.href = "./portfolio.html"
+			let destination = "./portfolio.html"
 			//Shows success plus redirects (you can adjust the destination if you need)
 			//if (msgSuccess) {
 			//	msgSuccess.textContent = "Login successful, Redirecting...";
@@ -143,6 +143,29 @@
 			//const params = new URLSearchParams(window.location.search);
 			//const next = params.get("next") || "./portfolio.html";
 			//setTimeout(() => { window.location.href = next; }, 600);
+			try {
+			  const token = localStorage.getItem("token") || "";
+			  if (token) {
+			    const res = await fetch(`${window.API_BASE_URL}/account`, {
+				  headers: {
+				    Authorization: `Bearer ${token}`,
+				  }
+				});
+				
+				if (res.ok) {
+				  const data = await res.json();
+				  const role = (data.role || "").toLowerCase();
+				  if (role == "admin") {
+				    destinatio = "./admin-dashboard.html";
+				  }
+				}
+			  }
+		    }
+			catch (innerErr) {
+			  console.error("Failed to fetch account for role check:", innerErr);
+			}
+			
+			window.location.href = destination;
 		}
 		catch (err) {
 			if (msgError) {

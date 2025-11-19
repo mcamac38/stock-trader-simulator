@@ -188,7 +188,7 @@ def db_list_transactions(user_id, tx_type=None, ticker=None, limit=200):
         results = []
         for created_at, ttype, tk, qty, price, total_value, in rows:
             results.append({
-                "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else None
+                "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else None,
                 "type": ttype,
                 "ticker": tk,
                 "quantity": qty,
@@ -724,6 +724,45 @@ def ticker_due_prices():
 
 app = Flask(__name__)
 
+def _price_daemon_loop():
+    LOCK_KEY = 424242  # any bigint
+    while True:
+        try:
+            if is_market_open()["is_open"]:
+                # single-leader using advisory lock
+                conn = get_db_connection()
+                got_lock = False
+                try:
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT pg_try_advisory_lock(%s);", (LOCK_KEY,))
+                            got_lock = bool(cur.fetchone()[0])
+                    if got_lock:
+                        try:
+                            ticker_due_prices()
+                        finally:
+                            with conn:
+                                with conn.cursor() as cur:
+                                    cur.execute("SELECT pg_advisory_unlock(%s);", (LOCK_KEY,))
+                finally:
+                    conn.close()
+        except Exception as e:
+            try:
+                app.logger.warning(f"price daemon error: {e}")
+            except Exception:
+                pass
+        time_module.sleep(60)  # check once per minute
+
+def _start_price_daemon_once():
+    if getattr(app, "_price_daemon_started", False):
+        return
+    app._price_daemon_started = True
+    t = threading.Thread(target=_price_daemon_loop, name="price-daemon", daemon=True)
+    t.start()
+
+_start_price_daemon_once()
+
+
 # Allow your Amplify frontend (set to your exact Amplify URL)
 AMPLIFY_ORIGIN = os.getenv("AMPLIFY_ORIGIN", "https://main.d2bmkzvarvu1na.amplifyapp.com")
 CORS(app, resources={r"/*": {"origins": [AMPLIFY_ORIGIN, "http://localhost:5173", "http://127.0.0.1:5173"]}}, supports_credentials=True, allow_headers=["Content-Type", "Authorize>
@@ -1076,7 +1115,7 @@ def place_order():
     try:
         ticker_due_prices()
     except Exception as e:
-    app.logger.warning(f"ticker_due_prices failed: {e}")
+        app.logger.warning(f"ticker_due_prices failed: {e}")
 
     try:
         conn = get_db_connection()
