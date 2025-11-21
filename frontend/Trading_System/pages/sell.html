@@ -201,7 +201,7 @@
 		window.API_BASE_URL = "https://6hhdszthdg.execute-api.us-east-1.amazonaws.com/prod";
 	</script>
 	<script type="module">
-	import { requireAuth, sellOrder, renderCash } from "../javascript/api.js";
+	import { requireAuth, sellOrder, renderCash, getTickerHistory } from "../javascript/api.js";
 
 	// Requires login & (optionally) show cash in a header <span id="cash-amount">
 	requireAuth();
