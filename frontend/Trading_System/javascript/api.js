@@ -64,6 +64,17 @@ export async function listTransactions({ type, symbol } = {}) {
 	return http(path, { auth: true });
 }
 
+// ADD: 7-day (or N) history for a ticker
+export async function getTickerHistory(ticker, days = 7) {
+  const t = (ticker || "").trim().toUpperCase();
+  if (!t) return [];
+  // GET /market/tickers/<ticker>/history?days=7
+  return http(`/market/tickers/${encodeURIComponent(t)}/history?days=${days}`, {
+    method: "GET",
+    auth: true
+  });
+}
+
 // Account & Cash
 export async function getBalance(){ return http("/account", { auth:true }); }
 export async function deposit(amount){ return http("/cash/deposit", { method:"POST", auth:true, body:{ amount: Number(amount) }}); }

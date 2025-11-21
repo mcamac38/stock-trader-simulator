@@ -1680,6 +1680,83 @@ def get_ticker(ticker):
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
+# ADD: 7-day (or N-day) price history for a ticker
+@app.route("/market/tickers/<ticker>/history", methods=["GET"])
+def get_ticker_history(ticker):
+    """
+    Returns a simple daily close series for the past N days (default 7).
+    Shape: [ { "date": "YYYY-MM-DD", "close": 123.45 }, ... ]
+    For now this is simulated from current_price (deterministic per day+ticker).
+    """
+    try:
+        from datetime import date, timedelta
+        import hashlib, random
+
+        t = (ticker or "").strip().upper()
+        if not t:
+            return jsonify({"detail": "ticker required"}), 400
+
+        # days query param (1..60), default 7
+        try:
+            days = int(request.args.get("days", 7))
+        except Exception:
+            days = 7
+        days = max(1, min(60, days))
+
+        # 1) get the latest/current price
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT current_price
+                      FROM stocks
+                     WHERE ticker = %s AND is_listed = TRUE
+                     LIMIT 1;
+                """, (t,))
+                row = cur.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({"detail": f"{t} not found or not listed"}), 404
+
+        base_price = float(row[0])
+        # Floor at zero to be safe
+        if base_price < 0:
+            base_price = 0.0
+
+        # 2) build deterministic N-day series that ends at base_price (today)
+        # We walk backwards so the last day (today) is exactly base_price.
+        today = date.today()
+        prices = [0.0] * days
+        prices[-1] = base_price
+
+        for i in range(days - 2, -1, -1):
+            day = today - timedelta(days=(days - 1 - i))
+            # deterministic seed from (ticker, day)
+            seed_str = f"{t}-{day.isoformat()}"
+            h = hashlib.sha256(seed_str.encode("utf-8")).hexdigest()
+            rnd = int(h[:8], 16) / 0xFFFFFFFF  # 0..1
+            # daily change in [-3%, +3%]
+            delta = (rnd * 0.06) - 0.03
+            scale = 1.0 + delta
+            if scale <= 0.0001:
+                scale = 0.0001  # guard against pathological scaling
+            prev_price = prices[i + 1] / scale
+            # never below zero
+            prices[i] = max(0.0, prev_price)
+
+        # 3) format response (oldest -> newest), round to cents
+        items = []
+        for i in range(days):
+            d = (today - timedelta(days=(days - 1 - i))).isoformat()
+            # y-axis should never dip below 0 in the client; we also clamp here
+            close_val = round(max(0.0, prices[i]), 2)
+            items.append({"date": d, "close": close_val})
+
+        # Return just the array for easy client use
+        return jsonify(items)
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
 
 if __name__ == "__main__":
     # Only used if you run app.py directly; systemd runs gunicorn
