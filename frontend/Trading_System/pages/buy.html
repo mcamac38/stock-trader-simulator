@@ -294,6 +294,7 @@
 		    console.error("chart", e);
 		  }
 		}
+		window.drawBuyChart = drawBuyChart;
 		
 		//This fethces the price for a ticker and render it
 		async function loadPrice(t) {
@@ -347,7 +348,11 @@
 		});
 		
 		// Also this will load the price for when the user finishes typing in the ticker too
-		tickerInput.addEventListener("blur", () => loadPrice(tickerInput.value));
+		tickerInput.addEventListener("blur", () => {
+		  const v = (tickerInput.value || "").toUpperCase().trim();
+		  loadPrice(v);
+		  window.drawBuyChart(v);
+		});
 		
 		form.addEventListener("submit", async (e) => {
 			e.preventDefault();
@@ -488,14 +493,20 @@
 	  
 	  // Events to keep user interface in sync
 	  select.addEventListener("change", () => {
-      tickerInput.value = (select.value || "").toUpperCase();
+        const v = (select.value || "").toUpperCase().trim();
+	  tickerInput.value = v
       renderTotals();
+	  window.drawBuyChart(v);
       });
 	  tickerInput.addEventListener("blur", renderTotals);
       qtyInput.addEventListener("input", renderTotals);
 
       // Initial render
       renderTotals();
+	  
+	  if (tickerInput.value) {
+        window.drawBuyChart((tickerInput.value || "").toUpperCase());
+	  }
 
       // Sync dropdown → text input
       if (select && tickerInput) {
@@ -506,10 +517,10 @@
         
         // Sync text input → dropdown
         tickerInput.addEventListener("input", () => {
-          const v = (tickerInput.value || "").toUpperCase();
+          const v = (tickerInput.value || "").toUpperCase().trim();
           const match = [...select.options].find(o => o.value === v);
           select.value = match ? v : "";
-		  drawBuyChart(v);
+		  window.drawBuyChart(v);
         });
       }
     </script>
