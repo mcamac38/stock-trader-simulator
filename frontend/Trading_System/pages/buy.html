@@ -281,11 +281,13 @@
 
 		// ADD: fetch + render into #buyChart
 		async function drawBuyChart(ticker) {
+		  console.log("[chart] start", ticker, document.getElementById("buyChart"));
 		  const t = (ticker || "").trim().toUpperCase();
 		  const canvas = document.getElementById("buyChart");
 		  if (!t || !canvas) return;
 		  try {
 			const data = await getTickerHistory(t, 7);
+			console.log("[chart] points", data);
 			renderLineChart(canvas, Array.isArray(data) ? data : []);
 		  } 
 		  catch (e) {
