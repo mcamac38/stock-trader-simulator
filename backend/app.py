@@ -1,7 +1,7 @@
 from __future__ import annotations
 import jwt, os
 from datetime import datetime, timezone, time, date, timedelta
-import time as time_module
+import threading, time as time_module
 from zoneinfo import ZoneInfo
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -646,8 +646,7 @@ def ticker_due_prices():
                     WHERE is_listed = TRUE
                       AND (last_price_update IS NULL
                            OR last_price_update <= %s)
-                      FOR UPDATE SKIP LOCKED
-                """, (cutoff,))
+                """, (threshold,))
                 due_rows = cur.fetchall()
                 
                 for ticker, current_price in due_rows:
@@ -674,32 +673,28 @@ def ticker_due_prices():
                     cur.execute("""
                         UPDATE stocks
                            SET
-                             previous_price     = CASE
-                                                    WHEN current_price <> %s THEN current_price
-                                                    ELSE previous_price
-                                                  END,
+                             previous_price     = CASE WHEN current_price <> %s THEN current_price ELSE previous_price END,
                              current_price      = %s,
                              last_price_update  = %s,
 
 
-                             -- reset O/H/L on first tick of the day
-                             last_ohl_date      = COALESCE(last_ohl_date, CURRENT_DATE),
+                             -- O/H/L maintenance (null-safe compare with IS DISTINCT FROM)
                              open_price         = CASE
-                                                    WHEN last_ohl_date <> CURRENT_DATE OR open_price IS NULL
+                                                    WHEN (last_ohl_date IS DISTINCT FROM CURRENT_DATE) OR open_price IS NULL
                                                       THEN %s
                                                     ELSE open_price
                                                   END,
                              day_high           = CASE
-                                                    WHEN last_ohl_date <> CURRENT_DATE OR day_high IS NULL
+                                                     WHEN (last_ohl_date IS DISTINCT FROM CURRENT_DATE) OR day_high IS NULL
                                                       THEN %s
                                                     ELSE GREATEST(day_high, %s)
                                                   END,
                              day_low            = CASE
-                                                    WHEN last_ohl_date <> CURRENT_DATE OR day_low IS NULL
+                                                    WHEN (last_ohl_date IS DISTINCT FROM CURRENT_DATE) OR day_low IS NULL
                                                       THEN %s
                                                     ELSE LEAST(day_low, %s)
                                                   END,
-                             -- stamp the roll date after evaluating above conditions
+                             -- set last_ohl_date ONCE at the end
                              last_ohl_date      = CURRENT_DATE
                          WHERE ticker = %s
                            AND (last_price_update IS NULL OR last_price_update <= %s)
@@ -709,7 +704,7 @@ def ticker_due_prices():
                         new_price,                 # open reset value
                         new_price, new_price,      # high reset, high expand
                         new_price, new_price,      # low reset,  low expand
-                        ticker, cutoff
+                        ticker, threshold
                     ))
 
                     if cur.rowcount:
