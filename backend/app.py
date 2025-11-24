@@ -1409,7 +1409,7 @@ def admin_create_stock():
         current_price = float(body.get("current_price"))
     except (TypeError, ValueError):
         current_price = 0.0
-    volume = body.get("volume")
+    shares_outstanding = body.get("shares_outstanding")
     sector = (body.get("sector") or "").strip() or None
     is_listed = bool(body.get("is_listed", True))
 
@@ -1421,24 +1421,24 @@ def admin_create_stock():
         with conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO stocks (ticker, company_name, current_price, volume, sector, is_listed, created_by)
+                    INSERT INTO stocks (ticker, company_name, current_price, shares_outstanding, sector, is_listed, created_by)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (ticker) DO UPDATE
                       SET company_name = EXCLUDED.company_name,
                           current_price = EXCLUDED.current_price,
-                          volume = COALESCE(EXCLUDED.volume, stocks.volume),
+                          shares_outstanding = COALESCE(EXCLUDED.shares_outstanding, stocks.shares_outstanding),
                           sector = COALESCE(EXCLUDED.sector, stocks.sector),
                           is_listed = EXCLUDED.is_listed,
                           created_by = EXCLUDED.created_by
-                    RETURNING ticker, company_name, current_price, volume, sector, is_listed;
-                """, (ticker, company_name, float(current_price), volume, sector, is_listed, user["id"]))
+                    RETURNING ticker, company_name, current_price, shares_outstanding, sector, is_listed;
+                """, (ticker, company_name, float(current_price), shares_outstanding, sector, is_listed, user["id"]))
                 t = cur.fetchone()
 
         return jsonify({
             "ticker": t[0],
             "company_name": t[1],
             "current_price": float(t[2]),
-            "volume": t[3],
+            "shares_outstanding": t[3],
             "sector": t[4],
             "is_listed": t[5],
             "created_by": user["username"]
