@@ -81,7 +81,7 @@
                     <th scope="col">Ticker</th>
                     <th scope="col">Company</th>
                     <th scope="col">Price</th>
-                    <th scope="col">Volume</th>
+                    <th scope="col">Outstanding Shares</th>
                     <th scope="col">Market Cap</th>
                     <th scope="col">Open</th>
                     <th scope="col">High</th>
@@ -204,7 +204,7 @@
 		    <td>${s.ticker}</td>
 			<td>${s.company_name}</td>
 			<td>${money(s.current_price)}</td>
-			<td>${Number(s.volume ?? 0).toLocaleString()}</td>
+			<td>${Number(s.shares_outstanding ?? 0).toLocaleString()}</td>
 			<td>${cap(s.market_cap)}</td>
 			<td>${money(s.open_price)}</td>
 			<td>${money(s.day_high)}</td>
