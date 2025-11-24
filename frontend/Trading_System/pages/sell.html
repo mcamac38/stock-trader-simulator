@@ -147,18 +147,13 @@
               </div>
               <div class="section-title">Chart</div>
               <div class="chart" aria-label="Stock chart placeholder">
-                Stock chart will render here
+                <canvas id="sellChart" width="720" height="260"></canvas>
               </div>
               <div class="actions">
                 <button type="submit" class="btn btn-primary">Sell</button>
                 <a class="btn btn-cancel" href="../index.html">Cancel</a>
               </div>
             </form>
-			<!-- ADD: 7-day price chart -->
-			<div class="panel" style="margin-top:12px">
-			  <h3>Chart (7 days)</h3>
-			  <canvas id="sellChart" width="720" height="260"></canvas>
-			</div>
           </section>
         </div>
       </main>
@@ -251,7 +246,7 @@
 	  const yFor = v => padT + (1 - (v - minY) / (maxY - minY)) * plotH;
 
 	  // axes
-	  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+	  ctx.strokeStyle = "#9CA3AF";
 	  ctx.lineWidth = 1;
 	  ctx.beginPath(); // y-axis line
 	  ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + plotH); ctx.stroke();
@@ -259,19 +254,19 @@
 	  ctx.moveTo(padL, padT + plotH); ctx.lineTo(padL + plotW, padT + plotH); ctx.stroke();
 
 	  // y-ticks (0, mid, max)
-	  ctx.fillStyle = "rgba(255,255,255,0.7)";
+	  ctx.fillStyle = "#374151";
 	  ctx.font = "12px system-ui, sans-serif";
 	  const ticks = [minY, (minY + maxY) / 2, maxY].map(v => Math.max(0, v));
 	  ticks.forEach((v, idx) => {
 		const y = yFor(v);
-		ctx.strokeStyle = "rgba(255,255,255,0.12)";
+		ctx.strokeStyle = "#E5E7EB";
 		ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
 		const label = `$${v.toFixed(2)}`;
 		ctx.fillText(label, 6, y + 4);
 	  });
 
 	  // line
-	  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+	  ctx.strokeStyle = "#111827";
 	  ctx.lineWidth = 2;
 	  ctx.beginPath();
 	  series.forEach((d, i) => {
