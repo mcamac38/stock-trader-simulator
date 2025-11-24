@@ -218,7 +218,7 @@
 			try {
 				//Builds the payload 
 				const payload = { ticker, company_name, current_price };
-				if (typeof volume == "number" && !Number.isNaN(volume)) payload.volume = volume;
+				if (typeof volume == "number" && !Number.isNaN(volume)) payload.shares_outstanding = volume;
 				if (sector) payload.sector = sector;
 				if (typeof is_listed == "boolean") payload.is_listed = is_listed;
 				
