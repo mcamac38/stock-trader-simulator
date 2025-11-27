@@ -313,7 +313,7 @@
 			try {
 				const r = await fetch (`${window.API_BASE_URL}/market/tickers/${encodeURIComponent(ticker)}`, {
 					headers: {
-						"Authorization": `Bearer ${localStorage.getItem("access_token") || ""}`
+						"Authorization": `Bearer ${localStorage.getItem("token") || ""}`
 					}
 				});
 				if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -442,7 +442,7 @@
 		try {
 	      // Fetch *this user's* holdings and populate the dropdown from them
 	      const res = await fetch(`${window.API_BASE_URL}/portfolio`, {
-	        headers: { "Authorization": `Bearer ${localStorage.getItem("access_token") || ""}` }
+	        headers: { "Authorization": `Bearer ${localStorage.getItem("token") || ""}` }
 	      });
 	      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 	      const data = await res.json();
@@ -472,8 +472,8 @@
 		select.appendChild(makeOpt("Failed to load stocks", ""));
 		select.disabled = true;
 		console.error(e);
-	  }
-	})();
+	    }
+	  })();
 	  
 	  function renderTotals() {
 	      const q = Number(qtyInput.value || 0);
