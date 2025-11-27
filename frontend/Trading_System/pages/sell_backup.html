@@ -415,7 +415,7 @@
 		}
 	</script>
 	<script type="module">
-      //import { listTickers } from "../javascript/api.js";
+      import { listTickers } from "../javascript/api.js";
 	  
 	  const select = document.getElementById("tickerSelect");
       const tickerInput =
@@ -439,41 +439,22 @@
       }
       
 	  (async () => {
-		try {
-	  +   // Fetch *this user's* holdings and populate the dropdown from them
-	  +   const res = await fetch(`${window.API_BASE_URL}/portfolio`, {
-	  +     headers: { "Authorization": `Bearer ${localStorage.getItem("access_token") || ""}` }
-	  +   });
-	  +   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-	  +   const data = await res.json();
-	  +   const holdings = Array.isArray(data.holdings) ? data.holdings : [];
-	  +
+        try {
+          const stocks = await listTickers();
 		  select.innerHTML = "";
-	  //-   select.appendChild(makeOpt("Select a Stock", ""));
-	  //-   stocks.forEach(s => {
-	  //-     select.appendChild(makeOpt(`${s.ticker} — ${s.company_name}`, s.ticker));
-	  //-     pricesByTicker[s.ticker] = Number(s.current_price);
-	  //-   });
-	  +   select.appendChild(makeOpt("Select a Stock you own", ""));
-	  +   holdings.forEach(h => {
-	  +     // Option label shows ticker and share count; value is the ticker
-	  +     select.appendChild(makeOpt(`${h.ticker} — ${h.quantity} sh`, h.ticker));
-	  +     // seed the price cache so totals work instantly
-	  +     pricesByTicker[h.ticker] = Number(h.current_price);
-	  +   });
-	  +
-	  +   // If the user has no positions, disable the dropdown gracefully
-	  +   if (!holdings.length) {
-	  +     select.appendChild(makeOpt("No positions found", ""));
-	  +     select.disabled = true;
-	  +   }
-	  } catch (e) {
-		select.innerHTML = "";
-		select.appendChild(makeOpt("Failed to load stocks", ""));
-		select.disabled = true;
-		console.error(e);
-	  }
-	})();
+          select.appendChild(makeOpt("Select a Stock", ""));
+          stocks.forEach(s => {
+            select.appendChild(makeOpt(`${s.ticker} — ${s.company_name}`, s.ticker));
+			pricesByTicker[s.ticker] = Number(s.current_price);
+          });
+        }
+		catch (e) {
+          select.innerHTML = "";
+          select.appendChild(makeOpt("Failed to load stocks", ""));
+          select.disabled = true;
+          console.error(e);
+        }
+      })();
 	  
 	  function renderTotals() {
 	      const q = Number(qtyInput.value || 0);
