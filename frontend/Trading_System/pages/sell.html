@@ -415,7 +415,7 @@
 		}
 	</script>
 	<script type="module">
-      //import { listTickers } from "../javascript/api.js";
+      import { http, listTickers } from "../javascript/api.js";
 	  
 	  const select = document.getElementById("tickerSelect");
       const tickerInput =
@@ -440,6 +440,12 @@
       
 	  (async () => {
 		try {
+		  // Build ticker -> company name map
+		  const companyByTicker = {};
+		  try {
+            const all = await listTickers();
+            all.forEach(s => { companyByTicker[s.ticker] = s.company_name; });
+          } catch (_) { /* ok if this fails; we'll just render nothing */ }
 	      // Fetch *this user's* holdings and populate the dropdown from them
 	      const res = await fetch(`${window.API_BASE_URL}/portfolio`, {
 	        headers: { "Authorization": `Bearer ${localStorage.getItem("token") || ""}` }
@@ -455,15 +461,20 @@
 	  //-     pricesByTicker[s.ticker] = Number(s.current_price);
 	  //-   });
 	      select.appendChild(makeOpt("Select a Stock you own", ""));
-	      holdings.forEach(h => {
-	        
-			// Option label shows ticker and share count; value is the ticker
-	        //select.appendChild(makeOpt(`${h.ticker} — ${h.quantity} sh`, h.ticker));
-			const label = `${h.company_name} - ${h.quantity} sh`;
+
+		  let added = 0;
+		  holdings.forEach(h => {
+			const name = companyByTicker[h.ticker];   // use company name only
+			if (!name) return;                        // skip if no name
+			const label = `${name} - ${h.quantity} sh`;
 			select.appendChild(makeOpt(label, h.ticker));
-	        // seed the price cache so totals work instantly
-	        pricesByTicker[h.ticker] = Number(h.current_price);
-	      });
+			pricesByTicker[h.ticker] = Number(h.current_price);
+			added++;
+		  });
+		  if (!added) {
+			select.appendChild(makeOpt("No positions found", ""));
+			select.disabled = true;
+		  }
 	   
 	      // If the user has no positions, disable the dropdown gracefully
 	      if (!holdings.length) {
