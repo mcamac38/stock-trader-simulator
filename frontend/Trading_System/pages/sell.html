@@ -456,7 +456,8 @@
 	  //-   });
 	      select.appendChild(makeOpt("Select a Stock you own", ""));
 	      holdings.forEach(h => {
-	        // Option label shows ticker and share count; value is the ticker
+	        if (!h.company_name) return;
+			// Option label shows ticker and share count; value is the ticker
 	        //select.appendChild(makeOpt(`${h.ticker} — ${h.quantity} sh`, h.ticker));
 			const label = `${h.company_name} - ${h.quantity} sh`;
 			select.appendChild(makeOpt(label, h.ticker));
