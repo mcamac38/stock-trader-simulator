@@ -313,7 +313,7 @@
 			try {
 				const r = await fetch (`${window.API_BASE_URL}/market/tickers/${encodeURIComponent(ticker)}`, {
 					headers: {
-						"Authorization": `Bearer ${localStorage.getItem("access_token") || ""}`
+						"Authorization": `Bearer ${localStorage.getItem("token") || ""}`
 					}
 				});
 				if (!r.ok) throw new Error(`HTTP ${r.status}`);
