@@ -232,7 +232,7 @@
 	  ctx.clearRect(0, 0, w, h);
 
 	  // padding for axes
-	  const padL = 46, padR = 8, padT = 10, padB = 22;
+	  const padL = 46, padR = 8, padT = 10, padB = 32;
 	  const plotW = w - padL - padR, plotH = h - padT - padB;
 
 	  // compute min/max (clamp min to 0)
@@ -252,6 +252,30 @@
 	  ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + plotH); ctx.stroke();
 	  ctx.beginPath(); // x-axis line
 	  ctx.moveTo(padL, padT + plotH); ctx.lineTo(padL + plotW, padT + plotH); ctx.stroke();
+	  
+	  // --- x-axis date labels (about ~6 evenly-spaced labels) ---
+	  const labelFor = (i) => {
+		// accept common backend keys (date/ts/time); fallback to synthetic day labels
+		const raw = series[i]?.date ?? series[i]?.ts ?? series[i]?.time;
+		const dt  = raw ? new Date(raw)
+                  : new Date(Date.now() - (series.length - 1 - i) * 86400000);
+		return dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+	  };
+
+	  ctx.fillStyle = "#374151";
+	  ctx.font = "12px system-ui, sans-serif";
+	  ctx.textAlign = "center";
+	  ctx.textBaseline = "top";
+
+	  const steps = Math.max(1, Math.floor(series.length / 6));
+	  for (let i = 0; i < series.length; i += steps) {
+		const x = xFor(i), y = padT + plotH;
+		// small tick
+		ctx.strokeStyle = "#E5E7EB";
+		ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 4); ctx.stroke();
+		// label
+		ctx.fillText(labelFor(i), x, y + 6);
+	  }
 
 	  // y-ticks (0, mid, max)
 	  ctx.fillStyle = "#374151";
