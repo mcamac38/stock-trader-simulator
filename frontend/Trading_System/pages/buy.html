@@ -230,7 +230,7 @@
 		  ctx.clearRect(0, 0, w, h);
 
 		  // padding for axes
-		  const padL = 46, padR = 8, padT = 10, padB = 32;
+		  const padL = 54, padR = 10, padT = 12, padB = 44;
 		  const plotW = w - padL - padR, plotH = h - padT - padB;
 
 		  // compute min/max (clamp min to 0)
@@ -262,7 +262,7 @@
 
 		  ctx.fillStyle = "#374151";
 		  ctx.font = "12px system-ui, sans-serif";
-		  ctx.textAlign = "center";
+		  ctx.textAlign = "right";
 		  ctx.textBaseline = "top";
 
 		  const steps = Math.max(1, Math.floor(series.length / 6));
@@ -272,7 +272,7 @@
 			ctx.strokeStyle = "#E5E7EB";
 			ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 4); ctx.stroke();
 			// label
-			ctx.fillText(labelFor(i), x, y + 6);
+			ctx.fillText(labelFor(i), x, y + 10);
 		  }
 
 		  // y-ticks (0, mid, max)
@@ -284,7 +284,7 @@
 			ctx.strokeStyle = "#E5E7EB";
 			ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
 			const label = `$${v.toFixed(2)}`;
-			ctx.fillText(label, 6, y + 4);
+			ctx.fillText(label, 6, y);
 		  });
 
 		  // line
