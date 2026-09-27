@@ -195,10 +195,7 @@
 		const pwdInputs = Array.from(document.querySelectorAll('input[type="password"]'));
 		const password        = (pwdInputs[0]?.value ?? "").trim();
 		const confirmPassword = (pwdInputs[1]?.value ?? "").trim();
-		
-		//Debug (remove after testing
-		console.log("DEBUG password values:", {password, confirmPassword });
-	
+					
 		//Client-side checks
 		if (email !== confirmEmail) {
 			if (msgError) { msgError.textContent = "Emails do not match."; msgError.style.display = "block"; }
