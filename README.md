@@ -1,80 +1,101 @@
 # Stock Trading Simulator
 
-A three-person Arizona State University IT capstone exploring how a browser-based trading simulator can be built and deployed across AWS services. Users manage simulated cash, buy and sell shares, and review their holdings and transactions. Administrators manage stocks and market schedules.
+A browser-based stock trading simulator built as a three-person, 15-week Arizona State University IT capstone. We built the application to let users manage simulated funds, buy and sell shares, and track their portfolios, with administrative tools for managing stocks and market schedules.
 
-**Academic simulation:** no real brokerage orders or real-money trading.
+The project connects a JavaScript frontend to a Python Flask API and a PostgreSQL database across AWS Amplify, API Gateway, EC2, and Aurora.
 
-## Project and my role
-
-I’m Matthew Camacho, the team lead for this 15-week ASU capstone. My work included leading the team, contributing to application integration and troubleshooting, and working across the frontend, Flask API, and AWS deployment. This was a shared team project; the application includes contributions from all three members.
-
-The project gave me practical experience connecting a static frontend to a separately hosted API and relational database, troubleshooting requests across service boundaries, and coordinating work across application components. Repository history and source files preserve team contributions; commit counts alone do not capture backend work deployed separately to EC2.
-
-## Capstone architecture
-
-The following describes the capstone deployment, as reported by the project lead. The repository does not contain a complete infrastructure definition or establish whether those services are currently running.
-
-```mermaid
-flowchart TD
-    GitHub[GitHub frontend changes] --> Amplify[AWS Amplify Hosting]
-    Amplify --> Browser[Browser: HTML, CSS, JavaScript]
-    Browser -->|HTTPS JSON requests| Gateway[Amazon API Gateway]
-    Gateway --> EC2[Amazon EC2: Gunicorn and Flask]
-    EC2 --> Aurora[Amazon Aurora PostgreSQL]
-```
-
-| Component | Responsibility |
-| --- | --- |
-| HTML, CSS, JavaScript | Forms, navigation, portfolio displays, charts, and API requests |
-| AWS Amplify | Hosted the static frontend and deployed frontend changes from GitHub |
-| Amazon API Gateway | Provided the frontend-facing HTTPS API endpoint and forwarded requests to the backend |
-| Amazon EC2 | Ran the Python Flask API through Gunicorn; systemd managed the backend service |
-| Aurora PostgreSQL | Stored users, balances, stocks, positions, transactions, and market configuration |
-
-GitHub primarily supported the **frontend deployment workflow**. The backend ran separately on EC2, so a committed backend snapshot is not necessarily the final deployed backend.
+**This is an academic simulation using virtual funds. It does not place real brokerage orders.**
 
 ## Features
 
-| Area | Capabilities represented in the source |
+| Area | What the application does |
 | --- | --- |
-| Accounts | Registration, password login, bearer tokens, and user/admin roles |
-| Simulated cash | Deposits, withdrawals, and balance display |
-| Trading | Buy and sell orders, holdings checks, and market-hours enforcement |
-| Portfolio | Holdings, current portfolio value, cash balance, and total equity |
-| Transactions | Trade and cash-movement history with type/ticker filtering |
-| Administration | Stock creation/updates, market hours, weekend-trading configuration, and date-specific closure/special-hours routes |
-| Market display | Stock prices, share counts, calculated market capitalization, and charts |
-| Price simulation | Price-update logic with a 15-minute eligibility interval and simulated historical chart data |
+| Accounts | Register, log in, and access user or administrator functionality |
+| Simulated funds | Deposit and withdraw virtual cash and view account balances |
+| Trading | Buy and sell shares, check holdings, and apply market-hours rules |
+| Portfolio | View holdings, portfolio value, available cash, and total equity |
+| Transactions | Review trade and cash-movement history with type and ticker filters |
+| Stock management | Create and update stocks through administrative functionality |
+| Market schedules | Configure market hours, weekend trading, and date-specific closures or special hours |
+| Market overview | Display prices, share counts, calculated market capitalization, and charts |
+| Price simulation | Apply simulated price updates with a 15-minute eligibility interval |
 
-Chart data is educational: ticker history is generated from current prices, and portfolio history accumulates transaction movements. It should not be interpreted as a real market feed or a complete historical performance calculation.
+Charts use educational data: ticker history is generated from current prices, and portfolio history accumulates transaction movements. They are not a live market feed or a complete historical investment-performance calculation.
 
-## Code guide
+## Architecture
+
+The capstone used a static frontend hosted on AWS Amplify, a Flask API running through Gunicorn on EC2, and an Aurora PostgreSQL database. API Gateway provided the HTTPS endpoint used by the browser.
+
+| Component | Technology | Responsibility |
+| --- | --- | --- |
+| Frontend | HTML, CSS, JavaScript, Chart.js | Forms, navigation, market displays, portfolio charts, and API requests |
+| Frontend hosting | AWS Amplify | Host the frontend and deploy updates from GitHub |
+| API entry point | Amazon API Gateway | Receive HTTPS requests and forward them to the backend |
+| Backend | Python, Flask, Gunicorn on Amazon EC2 | Process account, trading, portfolio, and administrative requests |
+| Service management | systemd | Manage the backend process on EC2 |
+| Database | Amazon Aurora PostgreSQL | Store users, balances, stocks, positions, transactions, and market configuration |
+
+### Request flow
+
+1. A user opens the frontend served by Amplify.
+2. The browser sends an API request through the HTTPS API Gateway endpoint.
+3. Flask processes the request on EC2, checks authentication or permissions where required, and reads or updates Aurora PostgreSQL.
+4. The API returns JSON, and the frontend updates the page.
+
+### Deployment workflow
+
+GitHub primarily supported frontend deployments through Amplify. The Flask/Gunicorn backend was deployed separately on EC2.
+
+The final capstone backend, retained separately as `SRE_Stock_Sim_Current`, has been restored as [`backend/app.py`](backend/app.py). The architecture above describes the capstone deployment; current AWS service availability has not been verified.
+
+## Repository guide
 
 | Path | Contents |
 | --- | --- |
-| [`frontend/Trading_System/index.html`](frontend/Trading_System/index.html) | Market overview |
-| [`frontend/Trading_System/pages/`](frontend/Trading_System/pages/) | Account, trading, portfolio, and admin pages; also contains earlier variants |
-| [`frontend/Trading_System/javascript/api.js`](frontend/Trading_System/javascript/api.js) | Shared API requests and browser token handling |
-| [`backend/app.py`](backend/app.py) | Final capstone backend supplied and identified by the project lead |
-| [`backend/`](backend/) | Backend snapshots, supporting code, requirements, and a health test |
-| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Initial GitHub Actions checks; not an EC2 backend deployment pipeline |
-| [`docs/REPOSITORY_REVIEW.md`](docs/REPOSITORY_REVIEW.md) | Backend comparison, known limitations, and prioritized cleanup work |
-| [`docs/FILE_INVENTORY.md`](docs/FILE_INVENTORY.md) | Every original tracked file classified as application, support, or historical/prototype material |
+| [`frontend/Trading_System/index.html`](frontend/Trading_System/index.html) | Market overview and application entry page |
+| [`frontend/Trading_System/pages/`](frontend/Trading_System/pages/) | Account, trading, portfolio, and administrative pages |
+| [`frontend/Trading_System/javascript/api.js`](frontend/Trading_System/javascript/api.js) | Shared API client and browser token handling |
+| [`frontend/Trading_System/css/styles.css`](frontend/Trading_System/css/styles.css) | Shared frontend styles |
+| [`backend/app.py`](backend/app.py) | Final capstone Flask backend |
+| [`backend/requirements.txt`](backend/requirements.txt) | Backend dependency list |
+| [`backend/tests/test_health.py`](backend/tests/test_health.py) | Backend health-endpoint test |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Automated checks |
+| [`docs/REPOSITORY_REVIEW.md`](docs/REPOSITORY_REVIEW.md) | Backend provenance, security findings, and remaining cleanup |
+| [`docs/FILE_INVENTORY.md`](docs/FILE_INVENTORY.md) | Current application files and historical-file removal candidates |
 
-## Authentication design
+Earlier snapshots and prototypes are still present pending cleanup. The file inventory identifies the current application versions.
 
-Registration hashes passwords using Werkzeug before storing them in PostgreSQL. Login checks the stored hash and issues a signed HS256 JWT with a one-hour lifetime. The browser stores the token in `localStorage` and sends it in an `Authorization: Bearer` header. Protected routes retrieve the user from the database, and admin routes check the database role.
+## Authentication
 
-The retained development code includes a legacy username-token fallback and a development signing-secret default that require removal before reuse. See the [review](docs/REPOSITORY_REVIEW.md) for details. This snapshot is not presented as production-ready authentication.
+Registration hashes passwords with Werkzeug before storing them in PostgreSQL. Login checks the password hash and issues an HS256 JWT with a one-hour lifetime. The frontend stores the token in `localStorage` and sends it using the `Authorization: Bearer` header. Backend routes retrieve user information from the database, and administrative routes check the user's role.
 
-## Repository status and reproduction
+The retained code also contains a legacy username-token fallback and a default development signing secret. These require correction before redeployment. Additional findings are documented in the [repository review](docs/REPOSITORY_REVIEW.md).
 
-This repository is being reconciled into an accurate capstone portfolio record. The project lead identified the separately retained `SRE_Stock_Sim_Current` file as the final backend used to run the capstone. It is restored here as `backend/app.py`, with line endings normalized. It passes syntax parsing; this is not an end-to-end runtime verification. The earlier committed snapshot and its syntax errors remain traceable in Git history. See the [comparison](docs/REPOSITORY_REVIEW.md) for the differences and remaining risks.
+## Setup status
 
-A working backend setup also needs a verified database schema, complete runtime dependencies, environment configuration, and integration testing. The current requirements omit PyJWT and Gunicorn; the repository does not include a complete database bootstrap or the deployed systemd/API Gateway configuration. Consequently, this README does not claim that a fresh clone runs end to end.
+This repository preserves the capstone application, but a fresh-clone, end-to-end setup has not yet been verified. The restored backend passes syntax checking.
 
-The source reads `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`, `JWT_SECRET`, and `AMPLIFY_ORIGIN`; direct Flask startup also reads `PORT`. Deployment-specific values and secrets belong outside Git. The frontend API URL is configured in `api.js` and several pages and must be reviewed before any future deployment.
+Before running or redeploying it, the remaining setup work includes:
 
-## Separate follow-on project
+- Verify and supply the database schema and initialization process.
+- Complete the dependency list, which currently omits PyJWT and Gunicorn.
+- Configure database access, the JWT signing secret, and the allowed frontend origin.
+- Review frontend API URLs in `api.js` and individual pages.
+- Resolve the documented security and link issues and test the integrated application.
 
-My newer [stock-trading-sre-platform](https://github.com/mcamac38/stock-trading-sre-platform) is a separate project for further reliability and operations practice. Its infrastructure and automation work should not be attributed to this capstone. This repository documents the original Amplify / API Gateway / EC2 / Aurora application.
+The backend reads these environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_HOST`, `DATABASE_PORT` | Database connection address |
+| `DATABASE_NAME` | Database name |
+| `DATABASE_USER`, `DATABASE_PASSWORD` | Database credentials |
+| `JWT_SECRET` | Token-signing secret |
+| `AMPLIFY_ORIGIN` | Frontend origin used for CORS configuration |
+| `PORT` | Port used for direct Flask startup |
+
+Keep credentials and deployment-specific secrets outside Git. Complete database bootstrap scripts and the deployed systemd/API Gateway configuration are not included.
+
+## Related project
+
+[`stock-trading-sre-platform`](https://github.com/mcamac38/stock-trading-sre-platform) is a separate follow-on project for reliability and operations practice. This repository covers the original ASU capstone and its Amplify, API Gateway, EC2, and Aurora architecture.
