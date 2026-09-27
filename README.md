@@ -59,6 +59,7 @@ Chart data is educational: ticker history is generated from current prices, and 
 | [`backend/`](backend/) | Backend snapshots, supporting code, requirements, and a health test |
 | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Initial GitHub Actions checks; not an EC2 backend deployment pipeline |
 | [`docs/REPOSITORY_REVIEW.md`](docs/REPOSITORY_REVIEW.md) | Backend comparison, known limitations, and prioritized cleanup work |
+| [`docs/FILE_INVENTORY.md`](docs/FILE_INVENTORY.md) | Every original tracked file classified as application, support, or historical/prototype material |
 
 ## Authentication design
 
