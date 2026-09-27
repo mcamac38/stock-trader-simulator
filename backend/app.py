@@ -9,8 +9,12 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import socket
 import random
 
+
 #this is a secure way to securely transmit info as JSON
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable is required")
+
 JWT_ALG = "HS256"
 
 #Helper for JWT
@@ -143,7 +147,71 @@ def db_withdraw(user_id: str, amount: float) -> float:
                 # Either user not found or insufficient funds
                 raise ValueError("Insufficient funds")
             return float(row[0])
-            
+
+def db_get_portfolio_history(user_id: int, days: int = 7):
+    """
+    Returns cumulative 'invested' value per day for the last N days,
+    based on the transactions table.
+
+    For each transaction:
+      - type = 'buy'      -> +total_value
+      - type = 'sell'     -> -total_value
+      - type = 'deposit'  -> +total_value (if you log these)
+      - type = 'withdraw' -> -total_value (if you log these)
+
+    Output list:
+      [ { "date": "2025-11-10", "value": 1234.56 }, ... ]
+    """
+    from collections import defaultdict
+
+    conn = get_db_connection()
+    try:
+        start_date = date.today() - timedelta(days=days - 1)
+
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        created_at::date AS d,
+                        type,
+                        total_value
+                    FROM transactions
+                    WHERE user_id = %s
+                      AND created_at::date >= %s
+                    ORDER BY d ASC;
+                    """,
+                    (user_id, start_date),
+                )
+                rows = cur.fetchall()
+
+        # Date -> net change that day
+        changes = defaultdict(float)
+        for d, ttype, total in rows:
+            total = float(total or 0)
+            ttype = (ttype or "").lower()
+            if ttype in ("buy", "deposit"):
+                changes[d] += total
+            elif ttype in ("sell", "withdraw"):
+                changes[d] -= total
+
+        # Build cumulative series
+        history = []
+        cumulative = 0.0
+        for i in range(days):
+            current = start_date + timedelta(days=i)
+            cumulative += changes.get(current, 0.0)
+            history.append(
+                {
+                    "date": current.isoformat(),
+                    "value": cumulative,
+                }
+            )
+
+        return history
+    finally:
+        conn.close()
+
 def db_list_transactions(user_id, tx_type=None, ticker=None, limit=200):
     """
     Returns the most recent transaction of a user (last 200)
@@ -168,23 +236,23 @@ def db_list_transactions(user_id, tx_type=None, ticker=None, limit=200):
                    FROM transactions
                    WHERE user_id = %s
                 """
-                
+
                 params = [user_id]
-                
+
                 if tx_type:
                     sql += " AND type = %s"
                     params.append(tx_type)
-                    
+
                 if ticker:
                     sql += " AND ticker = %s"
                     params.append(ticker)
-                    
+
                 sql += " ORDER BY created_at DESC LIMIT %s"
                 params.append(limit)
-                
+
                 cur.execute(sql, params)
                 rows = cur.fetchall()
-                
+
         results = []
         for created_at, ttype, tk, qty, price, total_value, in rows:
             results.append({
@@ -199,7 +267,7 @@ def db_list_transactions(user_id, tx_type=None, ticker=None, limit=200):
     finally:
         conn.close()
 
-# ------------------------------ Administrative Controls ------------------------------
+# ------------------------------ DataBase For Administrative Controls ------------------------------
 def db_get_market_hours():
     """
     Returns {"open_time": "6:00", "close_time": "17:00", "tz_name": "America/New_York"}
@@ -209,7 +277,7 @@ def db_get_market_hours():
         with conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT open_time, close_time, tz_name
+                    SELECT open_time, close_time, tz_name, COALESCE(allow_weekend_trading, FALSE)
                     FROM market_hours
                     WHERE id = TRUE
                     LIMIT 1
@@ -217,15 +285,16 @@ def db_get_market_hours():
                 row = cur.fetchone()
                 if not row:
                     # Fallback if table exists but row is missing
-                    return {"open_time": "6:00", "close_time": "17:00", "tz_name": "America/New_York"}
+                    return {"open_time": "6:00", "close_time": "17:00", "tz_name": "America/New_York","allow_weekend_trading": False}
                 # row[0], and row[1] are POSTGRES time converted to HH:MM
-                open_str = row[0].strftime("%H:%M")
-                close_str = row[1].strftime("%H:%M")
-                return {"open_time": open_str, "close_time": close_str, "tz_name": row[2]}
+                open_time, close_time, tz_name, allow_weekend_trading = row
+                open_str = open_time.strftime("%H:%M")
+                close_str = close_time.strftime("%H:%M")
+                return {"open_time": open_str, "close_time": close_str, "tz_name": tz_name, "allow_weekend_trading": bool(allow_weekend_trading)}
     finally:
         conn.close()
 
-def db_update_market_hours(open_time_str: str, close_time_str: str, tz_name: str):
+def db_update_market_hours(open_time_str: str, close_time_str: str, tz_name: str, allow_weekend_trading: bool | None = None):
     """
     Expects HH:MM 24H strings. Validates basic format and open<close.
     Also returns updated record.
@@ -256,23 +325,34 @@ def db_update_market_hours(open_time_str: str, close_time_str: str, tz_name: str
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute("""
-                    UPDATE market_hours
-                       SET open_time = %s,
-                           close_time = %s,
-                           tz_name = %s,
-                           updated_at = now()
-                    WHERE id = TRUE
-                """, (openTime, closeTime, tz_name))
-        return {"open_time": open_time_str, "close_time": close_time_str, "tz_name": tz_name}
+                if allow_weekend_trading is None:
+                    cur.execute("""
+                        UPDATE market_hours
+                           SET open_time = %s,
+                               close_time = %s,
+                               tz_name = %s,
+                               updated_at = now()
+                        WHERE id = TRUE
+                    """, (openTime, closeTime, tz_name))
+                else:
+                    cur.execute("""
+                        UPDATE market_hours
+                           SET open_time = %s, close_time = %s, tz_name = %s,
+                               allow_weekend_trading = %s,
+                               updated_at = now()
+                         WHERE id = TRUE
+                    """, (openTime, closeTime,
+                          tz_name, bool(allow_weekend_trading)))
+
+        return db_get_market_hours()
     finally:
         conn.close()
-        
+
 def db_get_market_closure_for_date(d: date):
     """
     This will look up the specific date closure in the market schedule closures table.
     Returns a dict or none if there is no row for that date.
-    
+
     Table:
       market_schedule_closures(
         close_date DATE PRIMARY KEY,
@@ -283,7 +363,7 @@ def db_get_market_closure_for_date(d: date):
         updated_at TIMESTAMPTZ
       )
     """
-    
+
     conn = get_db_connection()
     try:
         with conn:
@@ -297,24 +377,24 @@ def db_get_market_closure_for_date(d: date):
                 row = cur.fetchone()
                 if not row:
                     return None
-                    
+
                 close_date, is_closed, open_time, close_time, note = row
-                
+
                 #Makes sure time is in HH:MM as a string and not am integer
                 open_str = open_time.strftime("%H:%M") if open_time is not None else None
                 close_str = close_time.strftime("%H:%M") if close_time is not None else None
-                
+
                 return {
-                    "close_date": close.date.isoformat(),
+                    "close_date": close_date.isoformat(),
                     "is_closed": bool(is_closed),
                     "open_time": open_str,
                     "close_time": close_str,
                     "note": note,
                 }
-                
+
     finally:
         conn.close()
-        
+
 def db_list_market_closures():
     """
     Return all closure/override rows from market_schedule_closures,
@@ -355,7 +435,7 @@ def db_list_market_closures():
         return results
     finally:
         conn.close()
-        
+
 def db_upsert_market_closure( close_date_str: str, is_closed: bool, open_time_str: str | None, close_time_str: str | None, note: str | None,):
     """
     Insert or update a single row in market_schedule_closures.
@@ -429,12 +509,12 @@ def db_upsert_market_closure( close_date_str: str, is_closed: bool, open_time_st
             "note": note,
         }
     finally:
-        conn.close()        
-        
+        conn.close()
+
 def db_get_user_holdings(user_id: int):
     """
     This will pull the user's current stock holdings
-    
+
     Each item looks like this:
       {"ticker": "AAPL",
       "quantity": 10,
@@ -445,99 +525,42 @@ def db_get_user_holdings(user_id: int):
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT p.ticker, p.quantity, COALESCE(s.current_price, 0) AS current_price, p.quantity * COALESCE(s.current_price, 0) AS total_value
+                cur.execute(
+                    """
+                    SELECT
+                        p.ticker,
+                        s.company_name,
+                        p.quantity,
+                        COALESCE(s.current_price, 0) AS current_price,
+                        p.quantity * COALESCE(s.current_price, 0) AS total_value
                       FROM user_positions AS p
                       JOIN stocks AS s
                         ON s.ticker = p.ticker
-                     WHERE p.user_id = %s AND p.quantity > 0
-                    ORDER BY p.ticker ASC;
+                     WHERE p.user_id = %s
+                       AND p.quantity > 0
+                    ORDER BY s.company_name ASC;
                     """,
                     (user_id,),
                 )
                 rows = cur.fetchall()
-                
+
         holdings = []
-        for ticker, qty, price, total in rows:
+        for ticker, company_name, qty, price, total in rows:
             holdings.append(
                 {
                     "ticker": ticker,
+                    "company_name": company_name,
                     "quantity": float(qty),
                     "current_price": float(price),
                     "total_value": float(total),
                 }
             )
         return holdings
-    
+
     finally:
         conn.close()
-        
-def db_get_portfolio_history(user_id: int, days: int = 7):
-    """
-    Returns cumulative 'invested' value per day for the last N days,
-    based on the transactions table.
 
-    For each transaction:
-      - type = 'buy'      -> +total_value
-      - type = 'sell'     -> -total_value
-      - type = 'deposit'  -> +total_value (if you log these)
-      - type = 'withdraw' -> -total_value (if you log these)
-
-    Output list:
-      [ { "date": "2025-11-10", "value": 1234.56 }, ... ]
-    """
-    from collections import defaultdict
-
-    conn = get_db_connection()
-    try:
-        start_date = date.today() - timedelta(days=days - 1)
-
-        with conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT
-                        created_at::date AS d,
-                        type,
-                        total_value
-                    FROM transactions
-                    WHERE user_id = %s
-                      AND created_at::date >= %s
-                    ORDER BY d ASC;
-                    """,
-                    (user_id, start_date),
-                )
-                rows = cur.fetchall()
-
-        # Date -> net change that day
-        changes = defaultdict(float)
-        for d, ttype, total in rows:
-            total = float(total or 0)
-            ttype = (ttype or "").lower()
-            if ttype in ("buy", "deposit"):
-                changes[d] += total
-            elif ttype in ("sell", "withdraw"):
-                changes[d] -= total
-
-        # Build cumulative series
-        history = []
-        cumulative = 0.0
-        for i in range(days):
-            current = start_date + timedelta(days=i)
-            cumulative += changes.get(current, 0.0)
-            history.append(
-                {
-                    "date": current.isoformat(),
-                    "value": cumulative,
-                }
-            )
-
-        return history
-    finally:
-        conn.close()
-        
 # -------------------------------MARKET OPEN AND CLOSURE ENFORCEMENT HELPER------------------------------
-                     
 def is_market_open(now_utc: datetime | None = None) -> dict:
     """
     This returns dictionary with (is_open, now_local, open_time, close_time, and tz_name
@@ -546,12 +569,17 @@ def is_market_open(now_utc: datetime | None = None) -> dict:
     #1) This is used for a normal day (base hours)
     rec = db_get_market_hours()
     tz = ZoneInfo(rec["tz_name"])
+    allow_wknd = bool(rec.get("allow_weekend_trading", False))
 
     #2) This works to make sure "now" is the local time
     if now_utc is None:
         now_utc = datetime.now(timezone.utc)
     now_local = now_utc.astimezone(tz)
     local_date = now_local.date()
+
+    #2.5) Enforces closure on Sat/Sun
+    weekday = now_local.weekday()
+    is_weekend = weekday >= 5
 
     #3) This should look for date meant for markey closure
     override = db_get_market_closure_for_date(local_date)
@@ -572,11 +600,32 @@ def is_market_open(now_utc: datetime | None = None) -> dict:
                 "tz_name": rec["tz_name"],
                 "date": local_date.isoformat(),
                 "override": override,
+                "weekday": weekday,
+                "is_weekend": is_weekend,
+                "allow_weekend_trading": allow_wknd,
             }
-            
+
+        # Half-day / special hours: if provided, replace effective hours
+        if override.get("open_time"):
+            eff_open = override["open_time"]
+        if override.get("close_time"):
+            eff_close = override["close_time"]
+
+    if is_weekend and not allow_wknd:
+        return {
+            "is_open": False,
+            "now_local": now_local.isoformat(),
+            "open_time": eff_open,
+            "close_time": eff_close,
+            "tz_name": rec["tz_name"],
+            "date": local_date.isoformat(),
+            "override": override,
+            "weekday": weekday,
+            "is_weekend": is_weekend,
+            "allow_weekend_trading": allow_wknd,
+        }
+
     #5)This now replace what is in the comments to still enforce open hours
-       #openHour, openMinute = map(int, rec["open_time"].split(":"))
-       #closeHour, closeMinute = map(int, rec["close_time"].split(":"))
     openHour, openMinute = map(int, eff_open.split(":"))
     closeHour, closeMinute = map(int, eff_close.split(":"))
 
@@ -584,7 +633,7 @@ def is_market_open(now_utc: datetime | None = None) -> dict:
     close_dt = now_local.replace(hour=closeHour, minute=closeMinute, second=0, microsecond=0)
 
     open_flag = (open_dt <= now_local <= close_dt)
-    
+
     return {
         "is_open": open_flag,
         "now_local": now_local.isoformat(),
@@ -593,16 +642,24 @@ def is_market_open(now_utc: datetime | None = None) -> dict:
         "tz_name": rec["tz_name"],
         "date": local_date.isoformat(),
         "override": override,
+        "weekday": weekday,
+        "is_weekend": is_weekend,
+        "allow_weekend_trading": allow_wknd,
     }
 
-def require_market_open():
+def require_market_open(allow_admin_weekend: bool = True):
     status = is_market_open()
-    if not status["is_open"]:
+    if status["is_open"]:
+        return
+
+    if allow_admin_weekend and status.get("is_weekend"):
+        u = get_current_user()
+        if u and (u.get("role") or "").lower() == "admin":
+            return
         #This pops up in the frontend if the market is closed.
-        raise PermissionError({"detail": "Market is closed, go home Rodger!", "market": status})
-    
-    
-# ----------------------------------------- STOCK PRICE CHANGE HELPERS (This may change)---------------------------------------    
+    raise PermissionError({"detail": "Market is closed!", "market": status})
+
+# ----------------------------------------- STOCK PRICE CHANGE HELPERS (This may change)---------------------------------------
 # --- Price step config (from Kayla's idea) ---
 MIN_PRICE = 1.00
 STEP_MIN = 0.05        # 5%
@@ -614,7 +671,7 @@ def _rand_step_with_none():
     Should return a multiplier for the price: price + none, price + percentPrice, or price - percentPrice,
     where percentPrice is uniform between STEP_MIN and STEP_MAX.
     """
-    
+
     roll = random.random()
     if roll < (1/3):
         return 1.0
@@ -624,8 +681,8 @@ def _rand_step_with_none():
     else:
         pct = random.uniform(STEP_MIN, STEP_MAX)
         return max(1.0 - pct, 0.0)
-        
-def ticker_due_prices():
+
+def ticker_due_prices() -> int:
     """
     For each stock where at least INTERVAL_MINUTES have passed since last_price_update,
     apply at most one step (up/down/none), enforce a price floor, and stamp last_price_update.
@@ -633,8 +690,8 @@ def ticker_due_prices():
     """
     now = datetime.now(timezone.utc)
     threshold = now - timedelta(minutes=INTERVAL_MINUTES)
-    changed = 0    
-    
+    changed = 0
+
     conn = get_db_connection()
     try:
         with conn:
@@ -648,7 +705,7 @@ def ticker_due_prices():
                            OR last_price_update <= %s)
                 """, (threshold,))
                 due_rows = cur.fetchall()
-                
+
                 for ticker, current_price in due_rows:
                     price = float(current_price or 0.0)
                     if price < MIN_PRICE:
@@ -664,12 +721,12 @@ def ticker_due_prices():
                             new_price = round(max(MIN_PRICE, price * (1 + pct)), 2) #up
                         else:
                             new_price = round(max(MIN_PRICE, price * (1 - pct)), 2) #down
-                            
+
                     # 2) Update price + O/H/L in one atomic UPDATE
                     #    - If this is the first tick of the day (date changed or last_ohl_date is NULL),
                     #      set open=high=low=new_price and stamp last_ohl_date = CURRENT_DATE.
-                    #    - Otherwise, expand high/low with the new price.   #     
-                    
+                    #    - Otherwise, expand high/low with the new price.   #
+
                     cur.execute("""
                         UPDATE stocks
                            SET
@@ -714,7 +771,7 @@ def ticker_due_prices():
                 return changed
     finally:
         conn.close()
-# ----------------------------------------- END STOCK PRICE CHANGE HELPERS ---------------------------------------
+#  ----------------------------------------- END STOCK PRICE CHANGE HELPERS ---------------------------------------
 
 
 app = Flask(__name__)
@@ -757,22 +814,10 @@ def _start_price_daemon_once():
 
 _start_price_daemon_once()
 
-
 # Allow your Amplify frontend (set to your exact Amplify URL)
 AMPLIFY_ORIGIN = os.getenv("AMPLIFY_ORIGIN", "https://main.d2bmkzvarvu1na.amplifyapp.com")
-CORS(app, resources={r"/*": {"origins": [AMPLIFY_ORIGIN, "http://localhost:5173", "http://127.0.0.1:5173"]}}, supports_credentials=True, allow_headers=["Content-Type", "Authorize>
+CORS(app, resources={r"/*": {"origins": [AMPLIFY_ORIGIN, "http://localhost:5173", "http://127.0.0.1:5173"]}}, supports_credentials=True, allow_headers=["Content-Type", "Authorization"], expose_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "PUT", "OPTIONS"])
 
-# ---- Demo in-memory "DB" ----
-USERS = {}      # username -> {password, full_name, email, role}
-BALANCES = {}   # username -> float
-
-USERS["mcamac38"] = {
-    "password": "Finishthis",
-    "full_name": "Matthew Camacho",
-    "email": "mcamac38@asu.edu",
-    "role": "admin"
-}
-BALANCES["mcamac38"] = 10000.0
 
 @app.route("/")
 def home():
@@ -806,7 +851,7 @@ def dbcheck():
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 500
 
-#  ------------------------------ Auth helpers  ------------------------------
+# ------------------------------ Auth helpers ------------------------------
 def get_current_user():
     """Extract current user from Authorization: Bearer <token>.
        Supports JWT (preferred) and legacy 'username as token' fallback."""
@@ -834,71 +879,9 @@ def get_current_user():
             "role": u["role"],
         }
     except Exception:
-        # Fallback: legacy demo token == username
-        username = raw
-        u = db_get_user_by_username(username)
-        if not u:
-            return None
-        return {
-            "id": u["id"],
-            "username": u["username"],
-            "email": u["email"],
-            "full_name": u["full_name"],
-            "role": u["role"],
-        }
+        return None
 
-#def ensure_account(conn, user_id):
-#   with conn.cursor() as cur:
-#        cur.execute("""
-#           INSERT INTO accounts (user_id, cash_balance)
-#            VALUES (%s, 0)
-#            ON CONFLICT (user_id) DO NOTHING;
-#        """, (user_id,))
-
-#def get_balance_db(conn, user_id):
-#    with conn.cursor() as cur:
-#        cur.execute("SELECT cash_balance FROM accounts WHERE user_id = %s;", (user_id,))
-#        row = cur.fetchone()
-#        return float(row[0]) if row else 0.0
-
-#def deposit_db(conn, user_id, amount):
-#    with conn.cursor() as cur:
-#        # ensure row exists
-#        cur.execute("""
-#            INSERT INTO accounts (user_id, cash_balance)
-#            VALUES (%s, 0)
-#            ON CONFLICT (user_id) DO NOTHING;
-#        """, (user_id,))
-#        # add amount
-#        cur.execute("""
-#            UPDATE accounts
-#            SET cash_balance = cash_balance + %s
-#            WHERE user_id = %s
-#            RETURNING cash_balance;
-#        """, (amount, user_id))
-#       return float(cur.fetchone()[0])
-
-#def withdraw_db(conn, user_id, amount):
-#    with conn.cursor() as cur:
-#        # ensure row exists
-#        cur.execute("""
-#            INSERT INTO accounts (user_id, cash_balance)
-#            VALUES (%s, 0)
-#            ON CONFLICT (user_id) DO NOTHING;
-#        """, (user_id,))
-#        # subtract only if enough funds
-#        cur.execute("""
-#           UPDATE accounts
-#            SET cash_balance = cash_balance - %s
-#           WHERE user_id = %s AND cash_balance >= %s
-#            RETURNING cash_balance;
-#       """, (amount, user_id, amount))
-#        row = cur.fetchone()
-#        if not row:
-#            return None  # insufficient funds
-#        return float(row[0])
-
-# --------------------------------------- AUTH ENDPOINTS ---------------------------------------
+# --- ------------------------------- Auth endpoints ----------------------------------
 @app.route("/auth/register", methods=["POST"])
 def register():
     body = request.get_json(force=True) or {}
@@ -907,7 +890,7 @@ def register():
     email     = (body.get("email")     or "").strip()
     password  = (body.get("password")  or "")
 
-    if not username or not username or not email or not password:
+    if not full_name or not username or not email or not password:
         return jsonify({"detail": "All fields are required"}), 400
 
     try:
@@ -934,7 +917,7 @@ def login():
     token = make_token(username)
     return jsonify({"access_token": token, "token_type": "bearer"})
 
-# --------------------------------------- PROTECTED ENDPOINTS ---------------------------------------
+# ---------------------------------- Protected endpoints ----------------------------------
 @app.route("/account", methods=["GET"])
 def account():
     user = get_current_user()
@@ -959,18 +942,18 @@ def account():
         })
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
-        
+
 @app.route("/transactions", methods=["GET"])
 def get_transactions():
     """
     This will return the list of transactions of the current user order from newest to oldest
-    
+
     Should be GET /transactions?type=buy|sell|deposit|withdraw||all&symbol=AAPL
     """
     user = get_current_user()
     if not user:
         return jsonify({"detail": "Not Authenticated"}), 401
-        
+
     #this reads the filters from the query string
     raw_type = (request.args.get("type") or "") .strip().lower()
     #treats all  or empty as having no filter
@@ -978,14 +961,14 @@ def get_transactions():
         tx_type = None
     else:
         tx_type = raw_type
-        
+
     symbol = (
         request.args.get("symbol")
         or request.args.get("ticker")
         or ""
     ).strip().upper()
     ticker = symbol or None
-    
+
     try:
         items = db_list_transactions(
             user_id=user["id"],
@@ -993,7 +976,7 @@ def get_transactions():
             ticker=ticker,
         )
         return jsonify(items), 200
-        
+
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
@@ -1014,7 +997,7 @@ def cash_deposit():
 
     try:
         new_balance = db_deposit(user["id"], amount)  # <-- use users-table helper
-        
+
         try:
             conn = get_db_connection()
             with conn:
@@ -1023,11 +1006,11 @@ def cash_deposit():
                         INSERT INTO transactions (
                             user_id, type, ticker, quantity, price, total_value
                         )
-                        VALUEs (%s, 'deposit', NULL, NULL, NULL, %s);
+                        VALUES (%s, 'deposit', NULL, NULL, NULL, %s);
                     """, (user["id"], amount))
         except Exception:
             pass
-            
+
         return jsonify({"ok": True, "new_balance": new_balance})
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
@@ -1049,7 +1032,7 @@ def cash_withdraw():
 
     try:
         new_balance = db_withdraw(user["id"], amount)  # <-- use users-table helper
-        
+
         try:
             conn = get_db_connection()
             with conn:
@@ -1062,15 +1045,15 @@ def cash_withdraw():
                     """, (user["id"], amount))
         except Exception:
             # Optional: log this somewhere; don't interrupt the withdraw
-            pass        
-        
+            pass
+
         return jsonify({"ok": True, "new_balance": new_balance})
     except ValueError as ve:
         # raised by db_withdraw on insufficient funds
         return jsonify({"detail": str(ve)}), 400
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
-      
+
 @app.route("/trade/buy", methods=["POST"])
 def place_order():
     """
@@ -1106,7 +1089,7 @@ def place_order():
     except PermissionError as pe:
         payload = pe.args[0] if pe.args else {"detail": "Market is closed. Go home Rodger!"}
         return jsonify(payload), 403
-        
+
     try:
         ticker_due_prices()
     except Exception as e:
@@ -1186,13 +1169,20 @@ def place_order():
 
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
-        
+
+#--- THIS IS THE BEGINNING OF KAYLA TRADE SELL PUSH... IF IT DOENST WORK THEN DELETE ALL BELOW :)
 @app.route("/trade/sell", methods=["POST"])
 def trade_sell():
     """
-    POST body: { "ticker": "ACME", "side": "sell", "quantity": 1 }
-    Credits cash, reduces user_positions, logs a 'sell' transaction.
-    Returns: { ticker, price, quantity, total_value, new_cash_balance, position }
+    POST body: { "ticker": "ACME", "quantity": 1 }
+
+    Behavior:
+    - Uses current_price from stocks.
+    - Requires valid JWT (same as /trade/buy).
+    - Requires existing shares in user_positions.
+    - Adds proceeds to users.cash_balance.
+    - Updates or deletes user_positions row.
+    - Logs row in transactions as type='sell'.
     """
     user = get_current_user()
     if not user:
@@ -1200,11 +1190,11 @@ def trade_sell():
 
     body = request.get_json(force=True) or {}
     ticker = (body.get("ticker") or "").strip().upper()
-    qtyraw = body.get("quantity")
+    qty_raw = body.get("quantity")
 
-    # Basic validation (quantity is integer shares, > 0)
+    # Basic validation
     try:
-        quantity = int(qtyraw)
+        quantity = int(qty_raw)
     except (TypeError, ValueError):
         quantity = 0
 
@@ -1213,12 +1203,13 @@ def trade_sell():
     if quantity <= 0:
         return jsonify({"detail": "Quantity must be a positive integer"}), 400
 
+    # Enforce market hours (same behavior as buy)
     try:
         require_market_open()
     except PermissionError as pe:
-        payload = pe.args[0] if pe.args else {"detail": "Market is closed. Go home Rodger!"}
+        payload = pe.args[0] if pe.args else {"detail": "Market is closed"}
         return jsonify(payload), 403
-        
+
     try:
         ticker_due_prices()
     except Exception as e:
@@ -1228,99 +1219,103 @@ def trade_sell():
         conn = get_db_connection()
         with conn:
             with conn.cursor() as cur:
-                # 1) Get current price for ticker (must be listed)
+                # 1) Get existing position
+                cur.execute("""
+                    SELECT quantity, avg_cost
+                    FROM user_positions
+                    WHERE user_id = %s AND ticker = %s
+                    LIMIT 1;
+                """, (user["id"], ticker))
+                pos = cur.fetchone()
+                if not pos:
+                    return jsonify({"detail": f"No position found for {ticker}"}), 400
+
+                current_qty, avg_cost = pos
+                if current_qty < quantity:
+                    return jsonify({"detail": "Not enough shares to sell"}), 400
+
+                # 2) Get current price from stocks
                 cur.execute("""
                     SELECT current_price
-                      FROM stocks
-                     WHERE ticker = %s AND is_listed = TRUE
-                     LIMIT 1;
+                    FROM stocks
+                    WHERE ticker = %s AND is_listed = TRUE
+                    LIMIT 1;
                 """, (ticker,))
                 row = cur.fetchone()
                 if not row:
                     return jsonify({"detail": f"Ticker {ticker} not found or not listed"}), 404
+
                 price = float(row[0])
                 total_value = round(price * quantity, 2)
 
-                # 2) Lock the user's position and verify shares
-                cur.execute("""
-                    SELECT quantity, avg_cost
-                      FROM user_positions
-                     WHERE user_id = %s AND ticker = %s
-                     FOR UPDATE;
-                """, (user["id"], ticker))
-                pos = cur.fetchone()
-                if not pos:
-                    return jsonify({"detail": "No position to sell"}), 400
-
-                cur_qty, cur_avg = float(pos[0]), float(pos[1])
-                if cur_qty < quantity:
-                    return jsonify({"detail": "Insufficient shares"}), 400
-
-                # 3) Reduce position (avg_cost unchanged); delete if zero
-                cur.execute("""
-                    UPDATE user_positions
-                       SET quantity = quantity - %s,
-                           updated_at = now()
-                     WHERE user_id = %s AND ticker = %s
-                 RETURNING quantity, avg_cost;
-                """, (quantity, user["id"], ticker))
-                new_qty, new_avg = map(float, cur.fetchone())
-
-                if new_qty == 0:
-                    cur.execute("""
-                        DELETE FROM user_positions
-                         WHERE user_id = %s AND ticker = %s AND quantity = 0;
-                    """, (user["id"], ticker))
-
-                # 4) Credit cash
+                # 3) Add cash to user
                 cur.execute("""
                     UPDATE users
                        SET cash_balance = cash_balance + %s
                      WHERE id = %s
-                 RETURNING cash_balance;
-                """, (total_value, user["id"]))
-                new_cash_balance = float(cur.fetchone()[0])
 
-                # 5) Insert transaction record
+                     RETURNING cash_balance;
+                """, (total_value, user["id"]))
+                bal_row = cur.fetchone()
+                if not bal_row:
+                    raise Exception("User not found while updating cash balance")
+                new_cash_balance = float(bal_row[0])
+
+                # 4) Update or delete position
+                remaining_qty = current_qty - quantity
+                if remaining_qty <= 0:
+                    cur.execute("""
+                        DELETE FROM user_positions
+                        WHERE user_id = %s AND ticker = %s;
+                    """, (user["id"], ticker))
+                else:
+                    cur.execute("""
+                        UPDATE user_positions
+                           SET quantity = %s,
+                               updated_at = now()
+                         WHERE user_id = %s AND ticker = %s;
+                    """, (remaining_qty, user["id"], ticker))
+
+                # 5) Log transaction as 'sell'
                 cur.execute("""
-                    INSERT INTO transactions (user_id, type, ticker, quantity, price, total_value)
+                    INSERT INTO transactions (
+                        user_id, type, ticker, quantity, price, total_value
+                    )
                     VALUES (%s, 'sell', %s, %s, %s, %s)
                     RETURNING id;
                 """, (user["id"], ticker, quantity, price, total_value))
-                _tx_id = cur.fetchone()[0]
+                tx_id = cur.fetchone()[0]
 
-        # Success response
         return jsonify({
             "ticker": ticker,
             "price": price,
             "quantity": quantity,
             "total_value": total_value,
             "new_cash_balance": new_cash_balance,
-            "position": {"quantity": new_qty, "avg_cost": new_avg}
+            "remaining_quantity": remaining_qty,
+            "transaction_id": tx_id
         }), 201
 
     except Exception as e:
-        return jsonify({"detail": str(e)}), 500
-
-
+        return jsonify({"detail": f"Sell failed: {e}"}), 500
+#-------THIS IS WHERE KAYLA'S WORK ENDS :)
 
 @app.route("/portfolio", methods=["GET"])
 def get_portfolio():
     """
     This will return the current user's portfolio information containing:
-    
+
     {
       "cash_balance": 10000.00
       "portfolio_value": 2500.00
       "total_equity": 12500.00
       "holdings": [ticker: AAPL, quantity: 10, current_price: 120.50, total_value: 1205.00]
     """
-    
-    
+
     user = get_current_user()
     if not user:
         return jsonify({"detail": "Not Authenticated"}), 401
-    
+
     try:
         conn= get_db_connection()
         try:
@@ -1335,17 +1330,17 @@ def get_portfolio():
                         (user["id"],),
                     )
                     row = cur.fetchone()
-                    cash_balance = (float(row[0] if row[0] is not None else 0.00)
+                    cash_balance = float(row[0]) if row[0] is not None else 0.00
         finally:
             conn.close()
 
         # use the holding helper to get holdings
         holdings = db_get_user_holdings(user["id"])
-        
+
         # computes the portfolio totals
         portfolio_value = sum(h["total_value"] for h in holdings)
         total_equity = cash_balance + portfolio_value
-        
+
         return jsonify(
             {
                 "cash_balance": cash_balance,
@@ -1354,10 +1349,10 @@ def get_portfolio():
                 "holdings": holdings,
             }
         )
-    
+
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
-        
+
 @app.route("/portfolio/history", methods=["GET"])
 def get_portfolio_history():
     """
@@ -1388,7 +1383,7 @@ def get_portfolio_history():
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
-# ---------------------------------------- ADMIN ENDPOINTS ----------------------------------------
+# ----------------------------------------------ADMIN ROUTES---------------------------------------------
 @app.route("/admin/stocks", methods=["POST"])
 def admin_create_stock():
     user = get_current_user()
@@ -1471,19 +1466,23 @@ def admin_update_market_hours():
     open_time = (body.get("open_time") or "").strip()
     close_time = (body.get("close_time") or "").strip()
     tz_name = (body.get("tz_name") or "").strip()
+    allow_wknd = None
+
+    if "allow_weekend_trading" in body:
+        allow_wknd = bool(body.get("allow_weekend_trading"))
 
     if not open_time or not close_time:
         return jsonify({"detail": "open time and close times are required"}), 400
 
     try:
-        updated = db_update_market_hours(open_time, close_time, tz_name)
+        updated = db_update_market_hours(open_time, close_time, tz_name, allow_wknd)
         return jsonify(updated), 200
     except ValueError as ve:
         return jsonify({"detail": str(ve)}), 400
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
-        
- @app.route("/admin/market-schedule", methods=["GET"])
+
+@app.route("/admin/market-schedule", methods=["GET"])
 def admin_list_market_schedule():
     """
     Admin-only: return all date-specific closures/overrides from market_schedule_closures.
@@ -1500,8 +1499,8 @@ def admin_list_market_schedule():
         rows = db_list_market_closures()
         return jsonify(rows), 200
     except Exception as e:
-        return jsonify({"detail": str(e)}), 500          
-        
+        return jsonify({"detail": str(e)}), 500
+
 @app.route("/admin/market-schedule", methods=["PUT"])
 def admin_upsert_market_schedule():
     """
@@ -1522,7 +1521,6 @@ def admin_upsert_market_schedule():
     role = (user.get("role") or "").strip().lower()
     if role != "admin":
         return jsonify({"detail": "Forbidden"}), 403
-
     body = request.get_json(force=True) or {}
     close_date = (body.get("close_date") or "").strip()
     if not close_date:
@@ -1547,14 +1545,14 @@ def admin_upsert_market_schedule():
         # validation error from db_upsert_market_closure
         return jsonify({"detail": str(ve)}), 400
     except Exception as e:
-        return jsonify({"detail": str(e)}), 500        
+        return jsonify({"detail": str(e)}), 500
 
-# ----------------------------------------- OPERATIONAL ENDPOINTS ----------------------------------------
 
+#------This is used as a basline status return------
 @app.route("/market/hours", methods=["GET"])
 def public_get_market_hours():
     return jsonify(db_get_market_hours()), 200
-    
+
 @app.route("/market/status", methods=["GET"])
 def market_status():
     # Uses your updated is_market_open() which now checks closures/half-days
@@ -1565,7 +1563,7 @@ def market_status():
         hours = db_get_market_hours()
         tz_name = hours.get("tz_name", "America/New_York")
         try:
-            now_local = datetime.now(ZoneInfo(tzname)).isoformat()
+            now_local = datetime.now(ZoneInfo(tz_name)).isoformat()
         except Exception:
             now_local = datetime.now(timezone.utc).isoformat()
         safe = {
@@ -1581,6 +1579,8 @@ def market_status():
         # Return 200 so frontend renders; keep detail for troubleshooting
         return jsonify(safe), 200
 
+# -------------------------- OPERATIONAL ENDPOINTS -------------------------
+
 @app.route("/market/tickers", methods=["GET"])
 def list_tickers():
     """
@@ -1588,13 +1588,14 @@ def list_tickers():
     Example item:
     { "ticker":"ACME", "company_name":"Acme Corp", "current_price": 99.99 }
     """
+
     try:
         # Try to tick prices; even if it fails we still return the list
         try:
             if is_market_open()["is_open"]:
                 ticker_due_prices()
         except Exception as e:
-            print("ticker_due_prices error:", e)
+            app.logger.warning(f"ticker_due_prices error: {e}")
 
         conn = get_db_connection()
         with conn:
@@ -1637,13 +1638,15 @@ def list_tickers():
 
 @app.route("/market/tickers/<ticker>", methods=["GET"])
 def get_ticker(ticker):
-    
+
     try:
+        #New: bring any symbols up-to-date before reading/this might be changed if Kayla can get orginal code fully operational
         if is_market_open()["is_open"]:
             ticker_due_prices()
+
     except Exception as e:
-        app.logger.warning(f"ticker_due_prices failed: {e}")
-    
+        app.logger.warning(f"ticker_due_prices error: {e}")
+
     ticker = (ticker or "").strip().upper()
     if not ticker:
         return jsonify({"detail": "ticker required"}), 400
