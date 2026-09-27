@@ -315,7 +315,7 @@
         console.error("chart", e);
 	  }
 	}
-	
+	window.drawSellChart = drawSellChart;
 		
 	//This fethces the price for a ticker and render it
 		async function loadPrice(t) {
@@ -552,7 +552,7 @@
           const v = (tickerInput.value || "").toUpperCase();
           const match = [...select.options].find(o => o.value === v);
           select.value = match ? v : "";
-		  drawSellChart(v);
+		  window.drawSellChart(v);
         });
       }
 	  
