@@ -1,5 +1,5 @@
 # python
-_pycache_/
+__pycache__/
 *.pyc
 venv/
 
@@ -18,4 +18,4 @@ build/
 
 # System Files
 .DS_Store
-Thumbs.db_pycache_/ 
+Thumbs.db 

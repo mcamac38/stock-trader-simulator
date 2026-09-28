@@ -5,3 +5,4 @@ flake8
 black
 bandit
 psycopg2-binary
+PyJWT
